@@ -1,3 +1,4 @@
+from telegram.ext import InlineQueryHandler
 from game import *
 from telegram import (
     Update,
