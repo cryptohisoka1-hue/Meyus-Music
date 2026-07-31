@@ -1,3 +1,57 @@
+from PIL import Image, ImageDraw, ImageFont
+import io
+import os
+
+# ... (Diğer importlar) ...
+
+def create_card_image(color, value):
+    """Renk ve değere göre anlık olarak kart resmi çizer."""
+    # Kart boyutları (Genişlik x Yükseklik)
+    width, height = 150, 220
+    
+    # Renk kodları (Hex)
+    colors_map = {
+        "red": "#FF0000",
+        "blue": "#0000FF",
+        "green": "#008000",
+        "yellow": "#FFD700",
+        "wild": "#800080" # Mor
+    }
+    
+    bg_color = colors_map.get(color, "#FFFFFF")
+    
+    # Resmi oluştur
+    img = Image.new('RGB', (width, height), bg_color)
+    draw = ImageDraw.Draw(img)
+    
+    # Kenarlık çiz (Beyaz çerçeve)
+    draw.rectangle([5, 5, width-5, height-5], outline="white", width=3)
+    
+    # Değeri yaz (Merkeze)
+    font_size = 40
+    try:
+        # Basit bir font kullan (Sistemde varsa)
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except:
+        font = ImageFont.load_default()
+        
+    text_color = "white" if color in ["red", "blue", "green"] else "black"
+    
+    # Metni merkeze hizala (Basit hesaplama)
+    bbox = draw.textbbox((0, 0), str(value), font=font)
+    text_w = bbox - bbox [2]
+    text_h = bbox - bbox [3][1]
+    x = (width - text_w) / 2
+    y = (height - text_h) / 2
+    
+    draw.text((x, y), str(value), fill=text_color, font=font)
+    
+    # Resmi bellekteki bir yere kaydet
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
