@@ -7,17 +7,17 @@ from telegram.ext import (
     InlineQueryHandler
 )
 
-# game.py dosyanızdaki tüm fonksiyonları ve global değişkenleri çekiyoruz
-# NOT: game.py dosyanızda bu fonksiyonlar ve değişkenler (games, lobby_messages, vs.) mutlaka tanımlı olmalıdır.
+# game.py'deki fonksiyonları ve değişkenleri içe aktarıyoruz
+# NOT: game.py dosyanızda bu isimler mutlaka tanımlı olmalıdır.
 from game import (
-    create_game, 
-    join_game, 
-    start_game, 
-    play_card, 
-    draw_turn, 
-    choose_color, 
+    create_game,
+    join_game,
+    start_game,
+    play_card,
+    draw_turn,
+    choose_color,
     end_game,
-    COLOR_NAMES, 
+    COLOR_NAMES,
     NAME_TO_COLOR,
     get_player_name,
     games,
@@ -29,7 +29,6 @@ from callbacks import button
 from config import BOT_TOKEN
 
 
-# /start komutu
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not user:
@@ -62,7 +61,6 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
     await update.message.reply_html(text)
 
 
-# /oyun komutu
 async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -88,12 +86,10 @@ async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
     
-    # lobby_messages global değişkenini güncelle
     if chat.id in games:
         lobby_messages[chat.id] = msg.message_id
 
 
-# /katil komutu
 async def katil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
@@ -131,7 +127,6 @@ def _basladi_mesaji(chat_id):
     )
 
 
-# /baslat komutu
 async def baslat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -161,7 +156,6 @@ async def baslat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# /at komutu
 async def at(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -247,7 +241,6 @@ async def at(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 
-# /cek komutu
 async def cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -276,7 +269,6 @@ async def cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# /renk komutu
 async def renk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -314,7 +306,6 @@ async def renk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 
-# /bitir komutu
 async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -343,15 +334,12 @@ async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# /profil komutu
 async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(update.effective_user.id)
     if not user:
         await update.message.reply_text("Önce /start kullan.")
         return
 
-    # Veritabanı yapınıza göre indeksler değişebilir (genellikle tuple/list)
-    # user: Coin, user: Galibiyet, user: Oyun, user: Seviye, user: XP [3][4][5][6][7]
     await update.message.reply_text(
         f"""👤 Profil
 
@@ -364,7 +352,6 @@ async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# /yardim komutu
 async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         """
@@ -400,13 +387,12 @@ Profilini gösterir.
     )
 
 
-# Inline Query Handler (Hata vermemesi için kritik: Ana blokta tanımlı olmalı)
+# Inline Query Handler - HATA YOK: Boş liste  doğru yazıldı
 async def inline_query(update, context):
     """Inline aramaları yanıtlar."""
     await update.inline_query.answer(, cache_time=0)
 
 
-# Ana Uygulama Başlatma Fonksiyonu
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -421,10 +407,7 @@ def main():
     app.add_handler(CommandHandler("bitir", bitir))
     app.add_handler(CommandHandler("profil", profil))
     
-    # Callback Handler (Butonlar için)
     app.add_handler(CallbackQueryHandler(button))
-    
-    # Inline Query Handler Ekleme
     app.add_handler(InlineQueryHandler(inline_query))
     
     print("✅ Meyus UNO çalışıyor...")
@@ -433,4 +416,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                                      
+        
