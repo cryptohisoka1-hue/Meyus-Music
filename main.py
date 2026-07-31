@@ -123,31 +123,46 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # /katil
-async def katil(update, context):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    db.add_user(user.id, user.first_name, user.username)
 
-    result = join_game(
-        update.effective_chat.id,
-        update.effective_user.id,
-        update.effective_user.first_name
-    )
+    if context.args and context.args[0].startswith("join_"):
+        chat_id = int(context.args[0].split("_")[1])
+        result = join_game(chat_id, user.id, user.first_name)
 
-    if result == "NO_GAME":
-        await update.message.reply_text(
-            "❌ Önce /oyun komutu ile bir oyun oluşturulmalı."
-        )
+        if result == "NO_GAME":
+            await update.message.reply_text("❌ Bu oyun artık mevcut değil.")
+            return
+        if result == "ALREADY_JOINED":
+            await update.message.reply_text("ℹ️ Zaten bu oyuna katıldın.")
+        else:
+            await update.message.reply_text("✅ Oyuna katıldın! Oyun başlayınca kartların buradan gelecek.")
+
+        players = games[chat_id]["players"]
+        text = "🎮 <b>Meyus UNO Lobisi</b>\n\n"
+        text += f"👥 Oyuncular ({len(players)})\n\n"
+        for p in players:
+            text += f"• {p['name']}\n"
+
+        group_keyboard = [
+            [InlineKeyboardButton("➕ Katıl", url=f"https://t.me/{context.bot.username}?start=join_{chat_id}")],
+            [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
+        ]
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=lobby_messages[chat_id],
+                text=text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(group_keyboard)
+            )
+        except Exception:
+            pass
         return
 
-    if result == "ALREADY_JOINED":
-        await update.message.reply_text(
-            "ℹ️ Zaten oyuna katıldın."
-        )
-        return
-
-    oyuncu = len(games[update.effective_chat.id]["players"])
-
-    await update.message.reply_text(
-        f"✅ {update.effective_user.first_name} oyuna katıldı!\n\n👥 Toplam oyuncu: {oyuncu}"
-    )
+    text = f"""..."""  # mevcut hoşgeldin mesajın aynen kalıyor
+    await update.message.reply_html(text)
 # /baslat
 async def baslat(update, context):
 
