@@ -397,7 +397,8 @@ def main():
     app.add_handler(CommandHandler("bitir", bitir))
     app.add_handler(CommandHandler("profil", profil))
     app.add_handler(CallbackQueryHandler(button))
-
+    app.add_handler(InlineQueryHandler(inline_query))
+    
     print("✅ Meyus UNO çalışıyor...")
     app.run_polling()
 
