@@ -52,20 +52,20 @@ def create_game(chat_id, owner_id):
 def join_game(chat_id, user_id, name):
 
     if chat_id not in games:
-        return False
+        return "NO_GAME"
 
     players = games[chat_id]["players"]
 
     for p in players:
         if p["id"] == user_id:
-            return False
+            return "ALREADY_JOINED"
 
     players.append({
         "id": user_id,
         "name": name
     })
 
-    return True
+    return "OK"
 
 
 def start_game(chat_id):
