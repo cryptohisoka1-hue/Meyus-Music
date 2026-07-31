@@ -69,9 +69,9 @@ async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
     join_game(chat.id, user.id, user.first_name)
 
     keyboard = [
-        [InlineKeyboardButton("➕ Katıl", callback_data="join")],
-        [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
-    ]
+    [InlineKeyboardButton("➕ Katıl", url=f"https://t.me/{context.bot.username}?start=join_{chat.id}")],
+    [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
+]
 
     msg = await update.message.reply_text(
         "🎮 <b>Meyus UNO Lobisi</b>\n\n"
