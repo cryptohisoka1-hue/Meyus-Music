@@ -1,3 +1,26 @@
+# callbacks.py
+from telegram import CallbackQuery
+from telegram.ext import ContextTypes
+from main import show_hand  # <-- Bunu ekle (main.py'deki fonksiyonu buraya çağırıyoruz)
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    
+    if data == "show_hand":
+        # Butona basıldığında main.py'deki show_hand fonksiyonunu çalıştır
+        await show_hand(query, context)
+        
+    elif data == "join":
+        # ... mevcut katılma kodunuz ...
+        pass
+        
+    elif data == "start_game":
+        # ... mevcut başlatma kodunuz ...
+        pass
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from game import *
 
