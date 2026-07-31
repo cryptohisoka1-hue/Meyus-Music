@@ -8,11 +8,9 @@ COLORS = ["🔴", "🟢", "🔵", "🟡"]
 
 def create_deck():
     deck = []
-
     for color in COLORS:
         for i in range(10):
             deck.append(f"{color}{i}")
-
         deck.extend([
             f"{color}+2",
             f"{color}⛔",
@@ -45,17 +43,14 @@ def create_game(chat_id, owner_id):
         "hands": {},
         "started": False
     }
-
     return True
 
 
 def join_game(chat_id, user_id, name):
-
     if chat_id not in games:
         return "NO_GAME"
 
     players = games[chat_id]["players"]
-
     for p in players:
         if p["id"] == user_id:
             return "ALREADY_JOINED"
@@ -64,28 +59,33 @@ def join_game(chat_id, user_id, name):
         "id": user_id,
         "name": name
     })
-
     return "OK"
 
 
 def start_game(chat_id):
-
     game = games[chat_id]
-
     deck = create_deck()
-
     game["deck"] = deck
 
     for player in game["players"]:
-
         hand = []
-
         for _ in range(7):
             hand.append(deck.pop())
-
         game["hands"][player["id"]] = hand
 
     game["started"] = True
-
     return game
+
+
+def end_game(chat_id):
+    if chat_id not in games:
+        return False
+
+    del games[chat_id]
+    if chat_id in lobby_messages:
+        del lobby_messages[chat_id]
+
+    return True
+
+
 lobby_messages = {}
