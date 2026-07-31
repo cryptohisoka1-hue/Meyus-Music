@@ -41,8 +41,41 @@ async def button(update, context):
         )
 
     elif query.data == "start_game":
-        await query.answer("🚀 Oyun başlatılıyor...")
+    game_info = games.get(chat_id)
 
-        await query.edit_message_text(
-            "🎮 Oyun başladı! (Test sürümü)"
+    if not game_info:
+        await query.answer("❌ Oyun bulunamadı.", show_alert=True)
+        return
+
+    if user.id != game_info["owner"]:
+        await query.answer("❌ Sadece oyunu kuran kişi başlatabilir.", show_alert=True)
+        return
+
+    if len(game_info["players"]) < 2:
+        await query.answer("En az 2 oyuncu gerekli.", show_alert=True)
+        return
+
+    await query.answer("🚀 Oyun başlatılıyor...")
+
+    game = start_game(chat_id)
+
+    await query.edit_message_text("🚀 Oyun başladı!")
+
+    failed_players = []
+    for player in game["players"]:
+        cards = "\n".join(game["hands"][player["id"]])
+        try:
+            await context.bot.send_message(
+                player["id"],
+                f"🃏 Kartların:\n\n{cards}"
+            )
+        except Exception:
+            failed_players.append(player["name"])
+
+    if failed_players:
+        names = ", ".join(failed_players)
+        await context.bot.send_message(
+            chat_id,
+            f"⚠️ Şu oyunculara özelden mesaj gönderilemedi (önce botu özelden başlatmaları lazım):\n{names}\n\n"
+            f"https://t.me/{context.bot.username}"
         )
