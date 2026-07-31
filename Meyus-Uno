@@ -1,0 +1,21 @@
+Meyus-UNO/
+│
+├── main.py
+├── config.py
+├── database.py
+├── game.py
+├── cards.py
+├── handlers.py
+├── keyboards.py
+├── requirements.txt
+├── .env.example
+├── .gitignore
+├── README.md
+│
+├── assets/
+│   ├── cards/
+│   ├── logos/
+│   └── backgrounds/
+│
+└── data/
+    └── uno.db
