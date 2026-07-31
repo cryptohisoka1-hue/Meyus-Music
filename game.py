@@ -88,3 +88,4 @@ def start_game(chat_id):
     game["started"] = True
 
     return game
+lobby_messages = {}
