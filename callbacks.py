@@ -77,3 +77,42 @@ async def button(update, context):
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+    elif query.data == "start":
+
+        if chat_id not in games:
+            await query.answer(
+                "Oyun bulunamadı.",
+                show_alert=True
+            )
+            return
+
+        if len(games[chat_id]["players"]) < 2:
+            await query.answer(
+                "En az 2 oyuncu gerekli!",
+                show_alert=True
+            )
+            return
+
+        game = start_game(chat_id)
+
+        top_card = game["deck"].pop()
+
+        text = (
+            "🎮 <b>Meyus UNO</b>\n\n"
+            "🟢 Oyun Başladı!\n\n"
+            f"🃏 Ortadaki Kart: {top_card}\n\n"
+            f"👥 Oyuncu Sayısı: {len(game['players'])}\n"
+            f"👉 Sıra: {game['players'][0]['name']}"
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("🃏 Kartlarım", callback_data="cards")],
+            [InlineKeyboardButton("📥 Kart Çek", callback_data="draw")],
+            [InlineKeyboardButton("UNO!", callback_data="uno")]
+        ]
+
+        await query.edit_message_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
