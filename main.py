@@ -4,119 +4,27 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup
 )
-
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
 )
-
 from callbacks import button
-
 from config import BOT_TOKEN
 from database import db
 
 
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     user = update.effective_user
-
     db.add_user(
         user.id,
         user.first_name,
         user.username
     )
 
-    text = f"""
-🎮 <b>MEYUS UNO</b>
-
-Merhaba <b>{user.first_name}</b> 👋
-
-Meyus UNO'ya hoş geldin.
-
-Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
-
-📌 Komutlar
-
-/start - Botu başlat
-/yardim - Yardım
-/oyun - Yeni oyun oluştur
-/katil - Oyuna katıl
-/baslat - Oyunu başlat
-/profil - Profilin
-
-İyi eğlenceler ❤️
-"""
-
-    await update.message.reply_html(text)
-
-
-# /yardim
-# /oyun
-async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    chat = update.effective_chat
-    user = update.effective_user
-
-    if not create_game(chat.id, user.id):
-        await update.message.reply_text(
-            "❌ Bu grupta zaten açık bir oyun var."
-        )
-        return
-
-    join_game(chat.id, user.id, user.first_name)
-
-    keyboard = [
-    [InlineKeyboardButton("➕ Katıl", url=f"https://t.me/{context.bot.username}?start=join_{chat.id}")],
-    [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
-]
-
-    msg = await update.message.reply_text(
-        "🎮 <b>Meyus UNO Lobisi</b>\n\n"
-        f"👤 Oyuncular (1)\n"
-        f"• {user.first_name}",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="HTML"
-    )
-
-    lobby_messages[chat.id] = msg.message_id
-
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    chat_id = query.message.chat.id
-    user = query.from_user
-
-    if query.data == "join":
-        result = join_game(chat_id, user.id, user.first_name)
-        if result is False:
-            await query.answer("Zaten oyundasın.", show_alert=True)
-            return
-
-        players = games[chat_id]["players"]
-        text = "🎮 <b>Meyus UNO Lobisi</b>\n\n"
-        text += f"👥 Oyuncular ({len(players)})\n\n"
-        for p in players:
-            text += f"• {p['name']}\n"
-
-        keyboard = [
-            [InlineKeyboardButton("➕ Katıl", callback_data="join")],
-            [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
-        ]
-        await query.edit_message_text(
-            text,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-# /katil
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    db.add_user(user.id, user.first_name, user.username)
-
+    # Gruptaki "Katıl" deep-link butonundan geldiyse
     if context.args and context.args[0].startswith("join_"):
         chat_id = int(context.args[0].split("_")[1])
         result = join_game(chat_id, user.id, user.first_name)
@@ -124,11 +32,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if result == "NO_GAME":
             await update.message.reply_text("❌ Bu oyun artık mevcut değil.")
             return
+
         if result == "ALREADY_JOINED":
             await update.message.reply_text("ℹ️ Zaten bu oyuna katıldın.")
         else:
-            await update.message.reply_text("✅ Oyuna katıldın! Oyun başlayınca kartların buradan gelecek.")
+            await update.message.reply_text(
+                "✅ Oyuna katıldın! Oyun başlayınca kartların buradan (özelden) gelecek."
+            )
 
+        # Grup lobisindeki mesajı güncelle
         players = games[chat_id]["players"]
         text = "🎮 <b>Meyus UNO Lobisi</b>\n\n"
         text += f"👥 Oyuncular ({len(players)})\n\n"
@@ -136,9 +48,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"• {p['name']}\n"
 
         group_keyboard = [
-            [InlineKeyboardButton("➕ Katıl", url=f"https://t.me/{context.bot.username}?start=join_{chat_id}")],
+            [InlineKeyboardButton(
+                "➕ Katıl",
+                url=f"https://t.me/{context.bot.username}?start=join_{chat_id}"
+            )],
             [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
         ]
+
         try:
             await context.bot.edit_message_text(
                 chat_id=chat_id,
@@ -151,11 +67,86 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    text = f"""..."""  # mevcut hoşgeldin mesajın aynen kalıyor
+    text = f"""
+🎮 <b>MEYUS UNO</b>
+
+Merhaba <b>{user.first_name}</b> 👋
+
+Meyus UNO'ya hoş geldin.
+Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
+
+📌 Komutlar
+/start - Botu başlat
+/yardim - Yardım
+/oyun - Yeni oyun oluştur
+/katil - Oyuna katıl
+/baslat - Oyunu başlat
+/profil - Profilin
+
+İyi eğlenceler ❤️
+"""
     await update.message.reply_html(text)
+
+
+# /oyun
+async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if not create_game(chat.id, user.id):
+        await update.message.reply_text(
+            "❌ Bu grupta zaten açık bir oyun var."
+        )
+        return
+
+    join_game(chat.id, user.id, user.first_name)
+
+    keyboard = [
+        [InlineKeyboardButton(
+            "➕ Katıl",
+            url=f"https://t.me/{context.bot.username}?start=join_{chat.id}"
+        )],
+        [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
+    ]
+
+    msg = await update.message.reply_text(
+        "🎮 <b>Meyus UNO Lobisi</b>\n\n"
+        f"👤 Oyuncular (1)\n"
+        f"• {user.first_name}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+    lobby_messages[chat.id] = msg.message_id
+
+
+# /katil
+async def katil(update, context):
+    result = join_game(
+        update.effective_chat.id,
+        update.effective_user.id,
+        update.effective_user.first_name
+    )
+
+    if result == "NO_GAME":
+        await update.message.reply_text(
+            "❌ Önce /oyun komutu ile bir oyun oluşturulmalı."
+        )
+        return
+
+    if result == "ALREADY_JOINED":
+        await update.message.reply_text(
+            "ℹ️ Zaten oyuna katıldın."
+        )
+        return
+
+    oyuncu = len(games[update.effective_chat.id]["players"])
+    await update.message.reply_text(
+        f"✅ {update.effective_user.first_name} oyuna katıldı!\n\n👥 Toplam oyuncu: {oyuncu}"
+    )
+
+
 # /baslat
 async def baslat(update, context):
-
     chat_id = update.effective_chat.id
 
     if chat_id not in games:
@@ -171,30 +162,34 @@ async def baslat(update, context):
         return
 
     game = start_game(chat_id)
-
     await update.message.reply_text(
         "🚀 Oyun başladı!"
     )
 
+    failed_players = []
     for player in game["players"]:
-
         cards = "\n".join(
             game["hands"][player["id"]]
         )
-
         try:
             await context.bot.send_message(
                 player["id"],
                 f"🃏 Kartların:\n\n{cards}"
             )
-        except:
-            pass
+        except Exception:
+            failed_players.append(player["name"])
+
+    if failed_players:
+        names = ", ".join(failed_players)
+        await update.message.reply_text(
+            f"⚠️ Şu oyunculara özelden mesaj gönderilemedi (önce botu özelden başlatmaları lazım):\n{names}\n\n"
+            f"https://t.me/{context.bot.username}"
+        )
+
 
 # /profil
 async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     user = db.get_user(update.effective_user.id)
-
     if not user:
         await update.message.reply_text("Önce /start kullan.")
         return
@@ -209,10 +204,12 @@ async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ✨ XP: {user[7]}
 """
     )
-async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+
+# /yardim
+async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-"""
+        """
 🎮 Yardım
 
 /start
@@ -230,11 +227,10 @@ Oyunu başlatır.
 /profil
 Profilini gösterir.
 """
-)
+    )
 
 
 def main():
-
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -244,11 +240,11 @@ def main():
     app.add_handler(CommandHandler("baslat", baslat))
     app.add_handler(CommandHandler("profil", profil))
     app.add_handler(CallbackQueryHandler(button))
-    
-    print("✅ Meyus UNO çalışıyor...")
 
+    print("✅ Meyus UNO çalışıyor...")
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
+    
