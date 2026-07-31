@@ -38,6 +38,9 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 /oyun - Yeni oyun oluştur
 /katil - Oyuna katıl
 /baslat - Oyunu başlat
+/at - Kart at (örn: /at 3)
+/cek - Kart çek, sırayı geç
+/renk - Joker sonrası renk seç
 /bitir - Oyunu bitir
 /profil - Profilin
 
@@ -100,6 +103,21 @@ async def katil(update, context):
     )
 
 
+def _basladi_mesaji(chat_id):
+    game = games[chat_id]
+    top = game["discard"][-1]
+    color_name = COLOR_NAMES.get(game["current_color"], game["current_color"])
+    turn_name = get_player_name(chat_id, game["turn_order"][game["turn_index"]])
+    return (
+        "🚀 Oyun başladı!\n\n"
+        f"Üst kart: {top}   Renk: {color_name}\n"
+        f"▶️ Sıra: {turn_name}\n\n"
+        "Kartlarını görmek için aşağıdaki butona bas (sadece sana görünür).\n"
+        "Kart atmak için: /at <numara>\n"
+        "Çekmek/pas geçmek için: /cek"
+    )
+
+
 # /baslat
 async def baslat(update, context):
     chat_id = update.effective_chat.id
@@ -129,10 +147,153 @@ async def baslat(update, context):
 
     keyboard = [[InlineKeyboardButton("🃏 Kartlarımı Gör", callback_data="show_hand")]]
     await update.message.reply_text(
-        "🚀 Oyun başladı!\n\n"
-        "Kartlarını görmek için aşağıdaki butona bas (sadece sana görünür).",
+        _basladi_mesaji(chat_id),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+
+# /at
+async def at(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+
+    if not context.args:
+        await update.message.reply_text("Kullanım: /at <kart numarası>\nÖrnek: /at 3")
+        return
+
+    try:
+        index = int(context.args[0]) - 1
+    except ValueError:
+        await update.message.reply_text("Kart numarası bir sayı olmalı. Örnek: /at 3")
+        return
+
+    result = play_card(chat_id, user.id, index)
+    status = result["status"]
+
+    if status == "NO_GAME":
+        await update.message.reply_text("❌ Aktif bir oyun yok.")
+        return
+    if status == "GAME_OVER":
+        await update.message.reply_text("🏁 Oyun zaten bitti.")
+        return
+    if status == "WAITING_COLOR":
+        await update.message.reply_text("🌈 Önce renk seçilmesi bekleniyor: /renk kirmizi | yesil | mavi | sari")
+        return
+    if status == "NOT_YOUR_TURN":
+        await update.message.reply_text("⏳ Sıra sende değil.")
+        return
+    if status == "NOT_PLAYER":
+        await update.message.reply_text("❌ Bu oyunda değilsin.")
+        return
+    if status == "INVALID_INDEX":
+        await update.message.reply_text("❌ Geçersiz kart numarası. Kartlarını /kartlarim ile kontrol et.")
+        return
+    if status == "INVALID_CARD":
+        await update.message.reply_text("❌ Bu kartı şu an oynayamazsın (renk/numara uymuyor).")
+        return
+
+    name = get_player_name(chat_id, user.id)
+
+    if status == "WIN":
+        card = result["card"]
+        await update.message.reply_text(
+            f"{name} {card} attı.\n\n🏆 Oyunu kazandı! Tebrikler! 🎉"
+        )
+        end_game(chat_id)
+        return
+
+    if status == "WILD_PLAYED":
+        card = result["card"]
+        await update.message.reply_text(
+            f"🌈 {name} {card} attı!\n"
+            f"Renk seçmesi gerekiyor: /renk kirmizi | yesil | mavi | sari"
+        )
+        return
+
+    card = result["card"]
+    effect = result.get("effect")
+    next_id = games[chat_id]["turn_order"][games[chat_id]["turn_index"]]
+    next_name = get_player_name(chat_id, next_id)
+
+    msg = f"{name} {card} attı."
+    if effect == "reverse":
+        msg += " 🔄 Yön değişti!"
+    elif effect == "skip":
+        skipped_name = get_player_name(chat_id, result["skipped"])
+        msg += f" ⛔ {skipped_name} pas geçti!"
+    elif effect == "+2":
+        target_name = get_player_name(chat_id, result["target"])
+        msg += f" {target_name} 2 kart çekti ve pas geçti!"
+
+    msg += f"\n\n▶️ Sıra: {next_name}"
+    await update.message.reply_text(msg)
+
+
+# /cek
+async def cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+
+    result = draw_turn(chat_id, user.id)
+    status = result["status"]
+
+    if status == "NO_GAME":
+        await update.message.reply_text("❌ Aktif bir oyun yok.")
+        return
+    if status == "GAME_OVER":
+        await update.message.reply_text("🏁 Oyun zaten bitti.")
+        return
+    if status == "WAITING_COLOR":
+        await update.message.reply_text("🌈 Önce renk seçilmesi bekleniyor: /renk kirmizi | yesil | mavi | sari")
+        return
+    if status == "NOT_YOUR_TURN":
+        await update.message.reply_text("⏳ Sıra sende değil.")
+        return
+
+    name = get_player_name(chat_id, user.id)
+    next_id = games[chat_id]["turn_order"][games[chat_id]["turn_index"]]
+    next_name = get_player_name(chat_id, next_id)
+    await update.message.reply_text(
+        f"🎴 {name} bir kart çekti ve pas geçti.\n\n▶️ Sıra: {next_name}"
+    )
+
+
+# /renk
+async def renk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+
+    if not context.args:
+        await update.message.reply_text("Kullanım: /renk kirmizi | yesil | mavi | sari")
+        return
+
+    renk_adi = context.args[0].lower()
+    color = NAME_TO_COLOR.get(renk_adi)
+    if not color:
+        await update.message.reply_text("Geçersiz renk. Kullanım: /renk kirmizi | yesil | mavi | sari")
+        return
+
+    result = choose_color(chat_id, user.id, color)
+    status = result["status"]
+
+    if status == "NO_GAME":
+        await update.message.reply_text("❌ Aktif bir oyun yok.")
+        return
+    if status == "NOT_PENDING":
+        await update.message.reply_text("❌ Şu an renk seçmen gerekmiyor.")
+        return
+
+    name = get_player_name(chat_id, user.id)
+    next_id = games[chat_id]["turn_order"][games[chat_id]["turn_index"]]
+    next_name = get_player_name(chat_id, next_id)
+
+    msg = f"{name} rengi {COLOR_NAMES[color]} seçti."
+    if result.get("effect") == "+4":
+        target_name = get_player_name(chat_id, result["target"])
+        msg += f" {target_name} 4 kart çekti ve pas geçti!"
+
+    msg += f"\n\n▶️ Sıra: {next_name}"
+    await update.message.reply_text(msg)
 
 
 # /bitir
@@ -148,7 +309,6 @@ async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     game = games[chat_id]
 
-    # Sadece oyunu kuran kişi ya da grup yöneticisi bitirebilsin
     is_owner = user.id == game["owner"]
     is_admin = False
     if not is_owner:
@@ -204,6 +364,15 @@ Oyuna katılır.
 /baslat
 Oyunu başlatır.
 
+/at <numara>
+Elindeki o numaralı kartı atar. Örnek: /at 3
+
+/cek
+Elinden oynayacak kart yoksa bir kart çeker ve sırayı geçer.
+
+/renk <renk>
+Joker (🌈) attıktan sonra renk seçmek için. Örnek: /renk kirmizi
+
 /bitir
 Aktif oyunu sonlandırır.
 
@@ -221,6 +390,9 @@ def main():
     app.add_handler(CommandHandler("oyun", oyun))
     app.add_handler(CommandHandler("katil", katil))
     app.add_handler(CommandHandler("baslat", baslat))
+    app.add_handler(CommandHandler("at", at))
+    app.add_handler(CommandHandler("cek", cek))
+    app.add_handler(CommandHandler("renk", renk))
     app.add_handler(CommandHandler("bitir", bitir))
     app.add_handler(CommandHandler("profil", profil))
     app.add_handler(CallbackQueryHandler(button))
