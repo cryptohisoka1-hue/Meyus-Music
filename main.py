@@ -1,30 +1,41 @@
-from inline import register
-from telegram.ext import InlineQueryHandler
-from game import *
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
+    InlineQueryHandler
 )
+
+# game.py dosyanızdaki tüm fonksiyonları ve global değişkenleri çekiyoruz
+# NOT: game.py dosyanızda bu fonksiyonlar ve değişkenler (games, lobby_messages, vs.) mutlaka tanımlı olmalıdır.
+from game import (
+    create_game, 
+    join_game, 
+    start_game, 
+    play_card, 
+    draw_turn, 
+    choose_color, 
+    end_game,
+    COLOR_NAMES, 
+    NAME_TO_COLOR,
+    get_player_name,
+    games,
+    lobby_messages
+)
+
+from database import db
 from callbacks import button
 from config import BOT_TOKEN
-from database import db
 
 
-# /start
+# /start komutu
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    db.add_user(
-        user.id,
-        user.first_name,
-        user.username
-    )
+    if not user:
+        return
+    
+    db.add_user(user.id, user.first_name, user.username)
 
     text = f"""
 🎮 <b>MEYUS UNO</b>
@@ -51,15 +62,15 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
     await update.message.reply_html(text)
 
 
-# /oyun
+# /oyun komutu
 async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
+    if not chat or not user:
+        return
 
     if not create_game(chat.id, user.id):
-        await update.message.reply_text(
-            "❌ Bu grupta zaten açık bir oyun var."
-        )
+        await update.message.reply_text("❌ Bu grupta zaten açık bir oyun var.")
         return
 
     join_game(chat.id, user.id, user.first_name)
@@ -76,32 +87,32 @@ async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="HTML"
     )
-    lobby_messages[chat.id] = msg.message_id
+    
+    # lobby_messages global değişkenini güncelle
+    if chat.id in games:
+        lobby_messages[chat.id] = msg.message_id
 
 
-# /katil
-async def katil(update, context):
-    result = join_game(
-        update.effective_chat.id,
-        update.effective_user.id,
-        update.effective_user.first_name
-    )
+# /katil komutu
+async def katil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user or not chat:
+        return
+
+    result = join_game(chat.id, user.id, user.first_name)
 
     if result == "NO_GAME":
-        await update.message.reply_text(
-            "❌ Önce /oyun komutu ile bir oyun oluşturulmalı."
-        )
+        await update.message.reply_text("❌ Önce /oyun komutu ile bir oyun oluşturulmalı.")
         return
 
     if result == "ALREADY_JOINED":
-        await update.message.reply_text(
-            "ℹ️ Zaten oyuna katıldın."
-        )
+        await update.message.reply_text("ℹ️ Zaten oyuna katıldın.")
         return
 
-    oyuncu = len(games[update.effective_chat.id]["players"])
+    oyuncu = len(games[chat.id]["players"])
     await update.message.reply_text(
-        f"✅ {update.effective_user.first_name} oyuna katıldı!\n\n👥 Toplam oyuncu: {oyuncu}"
+        f"✅ {user.first_name} oyuna katıldı!\n\n👥 Toplam oyuncu: {oyuncu}"
     )
 
 
@@ -112,7 +123,7 @@ def _basladi_mesaji(chat_id):
     turn_name = get_player_name(chat_id, game["turn_order"][game["turn_index"]])
     return (
         "🚀 Oyun başladı!\n\n"
-        f"Üst kart: {top}   Renk: {color_name}\n"
+        f"Üst kart: {top} Renk: {color_name}\n"
         f"▶️ Sıra: {turn_name}\n\n"
         "Kartlarını görmek için aşağıdaki butona bas (sadece sana görünür).\n"
         "Kart atmak için: /at <numara>\n"
@@ -120,29 +131,25 @@ def _basladi_mesaji(chat_id):
     )
 
 
-# /baslat
-async def baslat(update, context):
+# /baslat komutu
+async def baslat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
+    if not chat_id or not user:
+        return
 
     if chat_id not in games:
-        await update.message.reply_text(
-            "Önce /oyun oluştur."
-        )
+        await update.message.reply_text("Önce /oyun oluştur.")
         return
 
     game_info = games[chat_id]
 
     if user.id != game_info["owner"]:
-        await update.message.reply_text(
-            "❌ Oyunu sadece oyunu kuran kişi başlatabilir."
-        )
+        await update.message.reply_text("❌ Oyunu sadece oyunu kuran kişi başlatabilir.")
         return
 
     if len(game_info["players"]) < 2:
-        await update.message.reply_text(
-            "En az 2 oyuncu gerekli."
-        )
+        await update.message.reply_text("En az 2 oyuncu gerekli.")
         return
 
     start_game(chat_id)
@@ -154,23 +161,25 @@ async def baslat(update, context):
     )
 
 
-# /at
+# /at komutu
 async def at(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
+    if not chat_id or not user:
+        return
 
     if not context.args:
         await update.message.reply_text("Kullanım: /at <kart numarası>\nÖrnek: /at 3")
         return
 
     try:
-        index = int(context.args[0]) - 1
+        index = int(context.args) - 1
     except ValueError:
         await update.message.reply_text("Kart numarası bir sayı olmalı. Örnek: /at 3")
         return
 
     result = play_card(chat_id, user.id, index)
-    status = result["status"]
+    status = result.get("status")
 
     if status == "NO_GAME":
         await update.message.reply_text("❌ Aktif bir oyun yok.")
@@ -188,7 +197,7 @@ async def at(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Bu oyunda değilsin.")
         return
     if status == "INVALID_INDEX":
-        await update.message.reply_text("❌ Geçersiz kart numarası. Kartlarını /kartlarim ile kontrol et.")
+        await update.message.reply_text("❌ Geçersiz kart numarası. Kartlarını kontrol et.")
         return
     if status == "INVALID_CARD":
         await update.message.reply_text("❌ Bu kartı şu an oynayamazsın (renk/numara uymuyor).")
@@ -197,22 +206,29 @@ async def at(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = get_player_name(chat_id, user.id)
 
     if status == "WIN":
-        card = result["card"]
-        await update.message.reply_text(
-            f"{name} {card} attı.\n\n🏆 Oyunu kazandı! Tebrikler! 🎉"
+        card = result.get("card")
+        card_str = f"{card['color']} {card['value']}" if isinstance(card, dict) else str(card)
+        
+        text = (
+            f"🏆 <b>Tebrikler!</b> 🏆\n\n"
+            f"<b>{name}</b>, UNO oyununu kazandı!\n"
+            f"Son oynanan kart: {card_str}\n\n"
+            "Yeni bir oyun için /oyun komutunu kullanabilirsiniz."
         )
+        await update.message.reply_html(text)
         end_game(chat_id)
         return
 
     if status == "WILD_PLAYED":
-        card = result["card"]
+        card = result.get("card")
+        card_str = f"{card['color']} {card['value']}" if isinstance(card, dict) else str(card)
         await update.message.reply_text(
-            f"🌈 {name} {card} attı!\n"
+            f"🌈 {name} {card_str} attı!\n"
             f"Renk seçmesi gerekiyor: /renk kirmizi | yesil | mavi | sari"
         )
         return
 
-    card = result["card"]
+    card = result.get("card")
     effect = result.get("effect")
     next_id = games[chat_id]["turn_order"][games[chat_id]["turn_index"]]
     next_name = get_player_name(chat_id, next_id)
@@ -221,23 +237,23 @@ async def at(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if effect == "reverse":
         msg += " 🔄 Yön değişti!"
     elif effect == "skip":
-        skipped_name = get_player_name(chat_id, result["skipped"])
+        skipped_name = get_player_name(chat_id, result.get("skipped"))
         msg += f" ⛔ {skipped_name} pas geçti!"
     elif effect == "+2":
-        target_name = get_player_name(chat_id, result["target"])
+        target_name = get_player_name(chat_id, result.get("target"))
         msg += f" {target_name} 2 kart çekti ve pas geçti!"
 
     msg += f"\n\n▶️ Sıra: {next_name}"
     await update.message.reply_text(msg)
 
 
-# /cek
+# /cek komutu
 async def cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
 
     result = draw_turn(chat_id, user.id)
-    status = result["status"]
+    status = result.get("status")
 
     if status == "NO_GAME":
         await update.message.reply_text("❌ Aktif bir oyun yok.")
@@ -260,7 +276,7 @@ async def cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# /renk
+# /renk komutu
 async def renk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -269,14 +285,14 @@ async def renk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Kullanım: /renk kirmizi | yesil | mavi | sari")
         return
 
-    renk_adi = context.args[0].lower()
+    renk_adi = context.args.lower()
     color = NAME_TO_COLOR.get(renk_adi)
     if not color:
         await update.message.reply_text("Geçersiz renk. Kullanım: /renk kirmizi | yesil | mavi | sari")
         return
 
     result = choose_color(chat_id, user.id, color)
-    status = result["status"]
+    status = result.get("status")
 
     if status == "NO_GAME":
         await update.message.reply_text("❌ Aktif bir oyun yok.")
@@ -291,22 +307,20 @@ async def renk(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = f"{name} rengi {COLOR_NAMES[color]} seçti."
     if result.get("effect") == "+4":
-        target_name = get_player_name(chat_id, result["target"])
+        target_name = get_player_name(chat_id, result.get("target"))
         msg += f" {target_name} 4 kart çekti ve pas geçti!"
 
     msg += f"\n\n▶️ Sıra: {next_name}"
     await update.message.reply_text(msg)
 
 
-# /bitir
+# /bitir komutu
 async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
 
     if chat_id not in games:
-        await update.message.reply_text(
-            "❌ Bu grupta aktif bir oyun yok."
-        )
+        await update.message.reply_text("❌ Bu grupta aktif bir oyun yok.")
         return
 
     game = games[chat_id]
@@ -329,26 +343,28 @@ async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# /profil
+# /profil komutu
 async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(update.effective_user.id)
     if not user:
         await update.message.reply_text("Önce /start kullan.")
         return
 
+    # Veritabanı yapınıza göre indeksler değişebilir (genellikle tuple/list)
+    # user: Coin, user: Galibiyet, user: Oyun, user: Seviye, user: XP [3][4][5][6][7]
     await update.message.reply_text(
         f"""👤 Profil
 
-🪙 Coin: {user[3]}
-🏆 Galibiyet: {user[4]}
-🎮 Oyun: {user[5]}
-⭐ Seviye: {user[6]}
-✨ XP: {user[7]}
+🪙 Coin: {user} [3]
+🏆 Galibiyet: {user} [4]
+🎮 Oyun: {user} [5]
+⭐ Seviye: {user} [6]
+✨ XP: {user} [7]
 """
     )
 
 
-# /yardim
+# /yardim komutu
 async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         """
@@ -384,6 +400,13 @@ Profilini gösterir.
     )
 
 
+# Inline Query Handler (Hata vermemesi için kritik: Ana blokta tanımlı olmalı)
+async def inline_query(update, context):
+    """Inline aramaları yanıtlar."""
+    await update.inline_query.answer(, cache_time=0)
+
+
+# Ana Uygulama Başlatma Fonksiyonu
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -397,7 +420,11 @@ def main():
     app.add_handler(CommandHandler("renk", renk))
     app.add_handler(CommandHandler("bitir", bitir))
     app.add_handler(CommandHandler("profil", profil))
+    
+    # Callback Handler (Butonlar için)
     app.add_handler(CallbackQueryHandler(button))
+    
+    # Inline Query Handler Ekleme
     app.add_handler(InlineQueryHandler(inline_query))
     
     print("✅ Meyus UNO çalışıyor...")
@@ -406,4 +433,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+                                      
