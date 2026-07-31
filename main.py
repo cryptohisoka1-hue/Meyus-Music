@@ -96,10 +96,41 @@ async def katil(update, context):
     )
 
 # /baslat
-async def baslat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def baslat(update, context):
+
+    chat_id = update.effective_chat.id
+
+    if chat_id not in games:
+        await update.message.reply_text(
+            "Önce /oyun oluştur."
+        )
+        return
+
+    if len(games[chat_id]["players"]) < 2:
+        await update.message.reply_text(
+            "En az 2 oyuncu gerekli."
+        )
+        return
+
+    game = start_game(chat_id)
+
     await update.message.reply_text(
-        "🚀 Oyun başlıyor...\n(Şimdilik test sürümü)"
+        "🚀 Oyun başladı!"
     )
+
+    for player in game["players"]:
+
+        cards = "\n".join(
+            game["hands"][player["id"]]
+        )
+
+        try:
+            await context.bot.send_message(
+                player["id"],
+                f"🃏 Kartların:\n\n{cards}"
+            )
+        except:
+            pass
 
 # /profil
 async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
