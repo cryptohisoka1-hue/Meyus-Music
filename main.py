@@ -11,10 +11,6 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
 )
-    Application,
-    CommandHandler,
-    ContextTypes,
-)
 
 from config import BOT_TOKEN
 from database import db
