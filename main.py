@@ -74,27 +74,29 @@ async def oyun(update, context):
 # /katil
 async def katil(update, context):
 
-    ok = join_game(
+    result = join_game(
         update.effective_chat.id,
         update.effective_user.id,
         update.effective_user.first_name
     )
 
-    if not ok:
+    if result == "NO_GAME":
         await update.message.reply_text(
-            "Oyuna katılamadın."
+            "❌ Önce /oyun komutu ile bir oyun oluşturulmalı."
         )
         return
 
-    oyuncu = len(
-        games[update.effective_chat.id]["players"]
-    )
+    if result == "ALREADY_JOINED":
+        await update.message.reply_text(
+            "ℹ️ Zaten oyuna katıldın."
+        )
+        return
+
+    oyuncu = len(games[update.effective_chat.id]["players"])
 
     await update.message.reply_text(
-        f"✅ {update.effective_user.first_name} katıldı.\n\n"
-        f"Toplam oyuncu: {oyuncu}"
+        f"✅ {update.effective_user.first_name} oyuna katıldı!\n\n👥 Toplam oyuncu: {oyuncu}"
     )
-
 # /baslat
 async def baslat(update, context):
 
