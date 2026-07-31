@@ -40,8 +40,7 @@ async def button(update, context):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    elif query.data == "start":
-
+    elif query.data == "start_game":
         await query.answer("🚀 Oyun başlatılıyor...")
 
         await query.edit_message_text(
