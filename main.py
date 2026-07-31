@@ -81,6 +81,7 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 /oyun - Yeni oyun oluştur
 /katil - Oyuna katıl
 /baslat - Oyunu başlat
+/bitir - Oyunu bitir
 /profil - Profilin
 
 İyi eğlenceler ❤️
@@ -187,6 +188,38 @@ async def baslat(update, context):
         )
 
 
+# /bitir
+async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+
+    if chat_id not in games:
+        await update.message.reply_text(
+            "❌ Bu grupta aktif bir oyun yok."
+        )
+        return
+
+    game = games[chat_id]
+
+    # Sadece oyunu kuran kişi ya da grup yöneticisi bitirebilsin
+    is_owner = user.id == game["owner"]
+    is_admin = False
+    if not is_owner:
+        member = await context.bot.get_chat_member(chat_id, user.id)
+        is_admin = member.status in ("administrator", "creator")
+
+    if not is_owner and not is_admin:
+        await update.message.reply_text(
+            "❌ Oyunu sadece oyunu kuran kişi veya grup yöneticisi bitirebilir."
+        )
+        return
+
+    end_game(chat_id)
+    await update.message.reply_text(
+        "🛑 Oyun sonlandırıldı. Yeni bir oyun için /oyun kullanabilirsiniz."
+    )
+
+
 # /profil
 async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(update.effective_user.id)
@@ -224,6 +257,9 @@ Oyuna katılır.
 /baslat
 Oyunu başlatır.
 
+/bitir
+Aktif oyunu sonlandırır.
+
 /profil
 Profilini gösterir.
 """
@@ -238,6 +274,7 @@ def main():
     app.add_handler(CommandHandler("oyun", oyun))
     app.add_handler(CommandHandler("katil", katil))
     app.add_handler(CommandHandler("baslat", baslat))
+    app.add_handler(CommandHandler("bitir", bitir))
     app.add_handler(CommandHandler("profil", profil))
     app.add_handler(CallbackQueryHandler(button))
 
@@ -247,4 +284,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
