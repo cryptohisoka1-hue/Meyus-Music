@@ -24,49 +24,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user.username
     )
 
-    # Gruptaki "Katıl" deep-link butonundan geldiyse
-    if context.args and context.args[0].startswith("join_"):
-        chat_id = int(context.args[0].split("_")[1])
-        result = join_game(chat_id, user.id, user.first_name)
-
-        if result == "NO_GAME":
-            await update.message.reply_text("❌ Bu oyun artık mevcut değil.")
-            return
-
-        if result == "ALREADY_JOINED":
-            await update.message.reply_text("ℹ️ Zaten bu oyuna katıldın.")
-        else:
-            await update.message.reply_text(
-                "✅ Oyuna katıldın! Oyun başlayınca kartların buradan (özelden) gelecek."
-            )
-
-        # Grup lobisindeki mesajı güncelle
-        players = games[chat_id]["players"]
-        text = "🎮 <b>Meyus UNO Lobisi</b>\n\n"
-        text += f"👥 Oyuncular ({len(players)})\n\n"
-        for p in players:
-            text += f"• {p['name']}\n"
-
-        group_keyboard = [
-            [InlineKeyboardButton(
-                "➕ Katıl",
-                url=f"https://t.me/{context.bot.username}?start=join_{chat_id}"
-            )],
-            [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
-        ]
-
-        try:
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=lobby_messages[chat_id],
-                text=text,
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(group_keyboard)
-            )
-        except Exception:
-            pass
-        return
-
     text = f"""
 🎮 <b>MEYUS UNO</b>
 
@@ -103,10 +60,7 @@ async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
     join_game(chat.id, user.id, user.first_name)
 
     keyboard = [
-        [InlineKeyboardButton(
-            "➕ Katıl",
-            url=f"https://t.me/{context.bot.username}?start=join_{chat.id}"
-        )],
+        [InlineKeyboardButton("➕ Katıl", callback_data="join")],
         [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
     ]
 
@@ -149,6 +103,7 @@ async def katil(update, context):
 # /baslat
 async def baslat(update, context):
     chat_id = update.effective_chat.id
+    user = update.effective_user
 
     if chat_id not in games:
         await update.message.reply_text(
@@ -156,36 +111,28 @@ async def baslat(update, context):
         )
         return
 
-    if len(games[chat_id]["players"]) < 2:
+    game_info = games[chat_id]
+
+    if user.id != game_info["owner"]:
+        await update.message.reply_text(
+            "❌ Oyunu sadece oyunu kuran kişi başlatabilir."
+        )
+        return
+
+    if len(game_info["players"]) < 2:
         await update.message.reply_text(
             "En az 2 oyuncu gerekli."
         )
         return
 
-    game = start_game(chat_id)
+    start_game(chat_id)
+
+    keyboard = [[InlineKeyboardButton("🃏 Kartlarımı Gör", callback_data="show_hand")]]
     await update.message.reply_text(
-        "🚀 Oyun başladı!"
+        "🚀 Oyun başladı!\n\n"
+        "Kartlarını görmek için aşağıdaki butona bas (sadece sana görünür).",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
-    failed_players = []
-    for player in game["players"]:
-        cards = "\n".join(
-            game["hands"][player["id"]]
-        )
-        try:
-            await context.bot.send_message(
-                player["id"],
-                f"🃏 Kartların:\n\n{cards}"
-            )
-        except Exception:
-            failed_players.append(player["name"])
-
-    if failed_players:
-        names = ", ".join(failed_players)
-        await update.message.reply_text(
-            f"⚠️ Şu oyunculara özelden mesaj gönderilemedi (önce botu özelden başlatmaları lazım):\n{names}\n\n"
-            f"https://t.me/{context.bot.username}"
-        )
 
 
 # /bitir
@@ -284,4 +231,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
+    
