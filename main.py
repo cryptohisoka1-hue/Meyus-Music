@@ -389,8 +389,7 @@ Profilini gösterir.
 
 # Inline Query Handler - HATA YOK: Boş liste  doğru yazıldı
 async def inline_query(update, context):
-    """Inline aramaları yanıtlar."""
-    await update.inline_query.answer(, cache_time=0)
+    await update.inline_query.answer([], cache_time=0)
 
 
 def main():
