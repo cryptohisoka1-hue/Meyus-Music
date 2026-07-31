@@ -2,6 +2,21 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from game import *
 
 
+def _basladi_mesaji(chat_id):
+    game = games[chat_id]
+    top = game["discard"][-1]
+    color_name = COLOR_NAMES.get(game["current_color"], game["current_color"])
+    turn_name = get_player_name(chat_id, game["turn_order"][game["turn_index"]])
+    return (
+        "🚀 Oyun başladı!\n\n"
+        f"Üst kart: {top}   Renk: {color_name}\n"
+        f"▶️ Sıra: {turn_name}\n\n"
+        "Kartlarını görmek için aşağıdaki butona bas (sadece sana görünür).\n"
+        "Kart atmak için: /at <numara>\n"
+        "Çekmek/pas geçmek için: /cek"
+    )
+
+
 async def button(update, context):
     query = update.callback_query
     chat_id = query.message.chat.id
@@ -58,23 +73,16 @@ async def button(update, context):
 
         keyboard = [[InlineKeyboardButton("🃏 Kartlarımı Gör", callback_data="show_hand")]]
         await query.edit_message_text(
-            "🚀 Oyun başladı!\n\n"
-            "Kartlarını görmek için aşağıdaki butona bas (sadece sana görünür).",
+            _basladi_mesaji(chat_id),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
     elif query.data == "show_hand":
-        game_info = games.get(chat_id)
+        text = hand_alert_text(chat_id, user.id)
 
-        if not game_info or not game_info.get("started"):
-            await query.answer("❌ Aktif bir oyun yok.", show_alert=True)
+        if text is None:
+            await query.answer("❌ Aktif bir oyun yok ya da bu oyunda değilsin.", show_alert=True)
             return
 
-        hand = game_info["hands"].get(user.id)
-        if hand is None:
-            await query.answer("❌ Bu oyunda değilsin.", show_alert=True)
-            return
-
-        text = "🃏 Kartların:\n" + "\n".join(hand)
         await query.answer(text=text[:190], show_alert=True)
         
