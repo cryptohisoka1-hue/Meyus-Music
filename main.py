@@ -86,6 +86,45 @@ async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lobby_messages[chat.id] = msg.message_id
 
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat.id
+    user = query.from_user
+
+    if query.data == "join":
+
+        result = join_game(chat_id, user.id, user.first_name)
+
+        if result is False:
+            await query.answer(
+                "Zaten oyundasın.",
+                show_alert=True
+            )
+            return
+
+        players = games[chat_id]["players"]
+
+        text = "🎮 <b>Meyus UNO Lobisi</b>\n\n"
+
+        text += f"👥 Oyuncular ({len(players)})\n\n"
+
+        for p in players:
+            text += f"• {p['name']}\n"
+
+        keyboard = [
+            [InlineKeyboardButton("➕ Katıl", callback_data="join")],
+            [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
+        ]
+
+        await query.edit_message_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
 # /katil
 async def katil(update, context):
 
