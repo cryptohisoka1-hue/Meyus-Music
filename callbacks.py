@@ -11,6 +11,33 @@ async def button(update, context):
 
     # Oyuna katıl
     if query.data == "join":
+            elif query.data == "start":
+
+        if chat_id not in games:
+            await query.answer(
+                "Oyun bulunamadı.",
+                show_alert=True
+            )
+            return
+
+        if len(games[chat_id]["players"]) < 2:
+            await query.answer(
+                "En az 2 oyuncu gerekli!",
+                show_alert=True
+            )
+            return
+
+        game = start_game(chat_id)
+
+        text = "🎮 <b>Meyus UNO</b>\n\n"
+        text += "✅ Oyun başladı!\n\n"
+        text += f"👥 Oyuncu Sayısı: {len(game['players'])}\n"
+        text += f"🃏 Ortadaki Kart: {game['deck'].pop()}"
+
+        await query.edit_message_text(
+            text,
+            parse_mode="HTML"
+        )
 
         result = join_game(
             chat_id,
