@@ -4,8 +4,6 @@ from game import *
 
 async def button(update, context):
     query = update.callback_query
-    await query.answer()
-
     chat_id = query.message.chat.id
     user = query.from_user
 
@@ -19,6 +17,8 @@ async def button(update, context):
         if result == "NO_GAME":
             await query.answer("Oyun bulunamadı.", show_alert=True)
             return
+
+        await query.answer()
 
         players = games[chat_id]["players"]
         text = "🎮 <b>Meyus UNO Lobisi</b>\n\n"
@@ -51,6 +51,8 @@ async def button(update, context):
         if len(game_info["players"]) < 2:
             await query.answer("En az 2 oyuncu gerekli.", show_alert=True)
             return
+
+        await query.answer("🚀 Oyun başlatılıyor...")
 
         start_game(chat_id)
 
