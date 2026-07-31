@@ -58,28 +58,33 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 # /yardim
 # /oyun
 async def oyun(update, context):
+async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
+    user = update.effective_user
 
-    ok = create_game(chat.id, update.effective_user.id)
-
-    if not ok:
+    if not create_game(chat.id, user.id):
         await update.message.reply_text(
             "❌ Bu grupta zaten açık bir oyun var."
         )
         return
 
-    join_game(
-        chat.id,
-        update.effective_user.id,
-        update.effective_user.first_name
+    join_game(chat.id, user.id, user.first_name)
+
+    keyboard = [
+        [InlineKeyboardButton("➕ Katıl", callback_data="join")],
+        [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
+    ]
+
+    msg = await update.message.reply_text(
+        "🎮 <b>Meyus UNO Lobisi</b>\n\n"
+        f"👤 Oyuncular (1)\n"
+        f"• {user.first_name}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
     )
 
-    await update.message.reply_text(
-        "🎮 Meyus UNO oluşturuldu.\n\n"
-        "Katılmak için:\n"
-        "/katil"
-    )
+    lobby_messages[chat.id] = msg.message_id
 
 # /katil
 async def katil(update, context):
