@@ -111,11 +111,12 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("yardim", yardim))
-app.add_handler(CommandHandler("oyun", oyun))
-app.add_handler(CommandHandler("katil", katil))
-app.add_handler(CommandHandler("baslat", baslat))
-app.add_handler(CommandHandler("profil", profil))
+    app.add_handler(CommandHandler("yardim", yardim))
+    app.add_handler(CommandHandler("oyun", oyun))
+    app.add_handler(CommandHandler("katil", katil))
+    app.add_handler(CommandHandler("baslat", baslat))
+    app.add_handler(CommandHandler("profil", profil))
+
     print("✅ Meyus UNO çalışıyor...")
 
     app.run_polling()
