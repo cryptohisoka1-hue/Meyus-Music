@@ -72,9 +72,27 @@ async def oyun(update, context):
     )
 
 # /katil
-async def katil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def katil(update, context):
+
+    ok = join_game(
+        update.effective_chat.id,
+        update.effective_user.id,
+        update.effective_user.first_name
+    )
+
+    if not ok:
+        await update.message.reply_text(
+            "Oyuna katılamadın."
+        )
+        return
+
+    oyuncu = len(
+        games[update.effective_chat.id]["players"]
+    )
+
     await update.message.reply_text(
-        f"✅ {update.effective_user.first_name} oyuna katıldı."
+        f"✅ {update.effective_user.first_name} katıldı.\n\n"
+        f"Toplam oyuncu: {oyuncu}"
     )
 
 # /baslat
