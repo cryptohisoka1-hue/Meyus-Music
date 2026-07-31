@@ -53,7 +53,6 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 
 # /yardim
 # /oyun
-async def oyun(update, context):
 async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
