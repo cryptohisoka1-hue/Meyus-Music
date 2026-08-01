@@ -1,4 +1,4 @@
-import aiohttp
+import httpx
 from telegram.error import BadRequest
 
 # Bellek içi cache: {card_code: file_id}
@@ -14,11 +14,11 @@ async def get_card_file_id(bot, card_code, chat_id):
 
     # Görseli indir
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    raise Exception(f"HTTP {resp.status}: {url}")
-                image_data = await resp.read()
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                raise Exception(f"HTTP {resp.status_code}: {url}")
+            image_data = resp.content
     except Exception as e:
         print(f"⚠️ Kart görseli indirilemedi ({card_code}): {e}")
         raise
