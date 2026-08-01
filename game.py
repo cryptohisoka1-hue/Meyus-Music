@@ -183,7 +183,7 @@ def play_card(chat_id, user_id, card_code):
     Dönüş: dict {
       'ok': bool, 'reason': str (hata durumunda),
       'effect': 'normal'|'skip'|'reverse'|'draw2'|'draw4'|None,
-      'needs_color': bool, 'win': bool
+      'needs_color': bool, 'win': bool, 'uno': bool
     }
     """
     game = games[chat_id]
@@ -210,9 +210,13 @@ def play_card(chat_id, user_id, card_code):
     if not is_wild(card_code):
         game["top_color"] = card_color(card_code)
 
+    # Kazandı mı?
     if not hand:
         game["winner"] = user_id
-        return {"ok": True, "effect": None, "needs_color": False, "win": True}
+        return {"ok": True, "effect": None, "needs_color": False, "win": True, "uno": False}
+
+    # UNO kontrolü (1 kart kaldıysa)
+    uno_called = len(hand) == 1
 
     value = card_value(card_code)
     effect = "normal"
@@ -247,7 +251,13 @@ def play_card(chat_id, user_id, card_code):
     else:
         _advance_turn(game, steps=1)
 
-    return {"ok": True, "effect": effect, "needs_color": needs_color, "win": False}
+    return {
+        "ok": True,
+        "effect": effect,
+        "needs_color": needs_color,
+        "win": False,
+        "uno": uno_called
+    }
 
 
 def choose_color(chat_id, user_id, color):
