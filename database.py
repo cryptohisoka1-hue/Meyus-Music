@@ -62,19 +62,37 @@ class Database:
     def remove_coin(self, user_id, amount):
         self.cursor.execute("""
             UPDATE users
-            SET coins = coins - ?
+            SET coins = MAX(0, coins - ?)
             WHERE user_id=?
         """, (amount, user_id))
         self.conn.commit()
 
-    # ---------------- XP ----------------
+    # ---------------- XP + LEVEL ----------------
     def add_xp(self, user_id, amount):
+        # XP ekle
         self.cursor.execute("""
             UPDATE users
             SET xp = xp + ?
             WHERE user_id=?
         """, (amount, user_id))
         self.conn.commit()
+
+        # Seviye kontrolü (her 100 XP = 1 seviye)
+        user = self.get_user(user_id)
+        if not user:
+            return
+
+        current_xp = user[7]
+        current_level = user[6]
+        new_level = (current_xp // 100) + 1
+
+        if new_level > current_level:
+            self.cursor.execute("""
+                UPDATE users
+                SET level = ?
+                WHERE user_id=?
+            """, (new_level, user_id))
+            self.conn.commit()
 
     # ---------------- GAME ----------------
     def add_game(self, user_id):
@@ -96,9 +114,9 @@ class Database:
     # ---------------- LEADERBOARD ----------------
     def leaderboard(self):
         self.cursor.execute("""
-            SELECT first_name, wins
+            SELECT first_name, wins, games, level, coins
             FROM users
-            ORDER BY wins DESC
+            ORDER BY wins DESC, level DESC
             LIMIT 10
         """)
         return self.cursor.fetchall()
