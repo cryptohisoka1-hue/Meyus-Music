@@ -10,6 +10,32 @@ COLORS = ["kirmizi", "yesil", "mavi", "sari"]
 SYMBOLS = ["artiiki", "durdur", "yonvedegis"]
 
 
+# Oyun başlatılırken ekle (start_game içinde):
+# game["has_drawn"] = {p["id"]: False for p in game["players"]}
+
+# draw_card fonksiyonunda (başarılı çekim sonrası):
+# game["has_drawn"][user_id] = True
+
+# play_card fonksiyonunda (başarılı oynama sonrası):
+# game["has_drawn"][user_id] = False
+
+def pass_turn(chat_id, user_id):
+    """Oyuncu pas geçer. Sadece kart çektikten sonra geçerlidir."""
+    game = games.get(chat_id)
+    if not game or not game.get("started") or game.get("winner"):
+        return {"ok": False, "reason": "OYUN_YOK"}
+    if current_player(chat_id) != user_id:
+        return {"ok": False, "reason": "SIRA_DEGIL"}
+    if not game.get("has_drawn", {}).get(user_id, False):
+        return {"ok": False, "reason": "ONCE_CEK"}
+    
+    game["has_drawn"][user_id] = False
+    # Sırayı geçir (senin mevcut fonksiyonun neyse onu çağır)
+    _advance_turn(chat_id)  # ← Bunu kendi sıra geçirme fonksiyonunla değiştir
+    return {"ok": True}
+    
+
+
 def create_deck():
     """
     Kart kodlari assets/cards/<kod>.png dosya adlariyla birebir eslesir.
