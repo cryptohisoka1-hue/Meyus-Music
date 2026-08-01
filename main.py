@@ -101,7 +101,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     db.add_user(user.id, user.first_name, user.username)
 
-    text = f""" 🎮 <b>MEYUS UNO</b> Merhaba <b>{user.first_name}</b> 👋 Meyus UNO'ya hoş geldin. Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin. 📌 Komutlar /start - Botu başlat /yardim - Yardım /oyun - Yeni oyun oluştur /katil - Oyuna katıl /baslat - Oyunu başlat /bitir - Oyunu/lobiyi sonlandır /profil - Profilin 🃏 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin (sıra sende değilse sadece görüntülemek için). Sıra sende olduğunda aynı buton oynanabilir kartlarını ve kart çekme seçeneğini listeler; seçtiğin otomatik oynanır. İyi eğlenceler ❤️ """
+    text = f""" 🎮 <b>MEYUS UNO</b> Merhaba <b>{user.first_name}</b> 👋 Meyus UNO'ya hoş geldin. Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin. 📌 Komutlar /start - Botu başlat /yardim - Yardım /oyun - Yeni oyun oluştur /katil - Oyuna katıl /baslat - Oyunu başlat /bitir - Oyunu/lobiyi sonlandır /profil - Profilin /cek - Kart çek (sıra sendeyken) /pas - Pas geç (kart çektikten sonra) 🃏 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin (sıra sende değilse sadece görüntülemek için). Sıra sende olduğunda aynı buton oynanabilir kartlarını, kart çekme ve pas geçme seçeneklerini listeler; seçtiğin otomatik uygulanır. İyi eğlenceler ❤️ """
     await update.message.reply_html(text)
 
 
@@ -267,7 +267,75 @@ async def baslat(update, context):
     await _do_start_game(context, chat_id)
 
 
-# Inline query: sira kimdeyse SADECE ona ozel oynanabilir kartlari + kart cekme secenegini gosterir
+# /cek - kart çek (sıra sendeyken)
+async def cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat_id, game = find_active_game_for_user(user.id)
+
+    if not game:
+        await update.message.reply_text("❌ Aktif bir oyunda değilsin.")
+        return
+
+    if chat_id != update.effective_chat.id:
+        await update.message.reply_text("❌ Bu komutu oynadığın oyunun grubunda kullan.")
+        return
+
+    if current_player(chat_id) != user.id:
+        await update.message.reply_text("⏳ Sıra sende değil.")
+        return
+
+    res = draw_card(chat_id, user.id)
+    if not res["ok"]:
+        await update.message.reply_text("❌ Kart çekilemedi.")
+        return
+
+    actor_mention = mention_html(user.id, player_name(game, user.id))
+    n = len(res["drawn"])
+    await update.message.reply_html(
+        f"🂠 {actor_mention} kart çekti ({n} kart)."
+        if n else f"🂠 {actor_mention} çekmek istedi ama deste boş."
+    )
+
+    if not game.get("winner"):
+        await update.message.reply_html(
+            f"Şimdi çektiğin kartı oynayabilir ya da /pas ile sırayı geçebilirsin. "
+            f"Elini görmek için 🎴 butonuna dokun.",
+        )
+
+
+# /pas - kart çektikten sonra pas geçme
+async def pas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat_id, game = find_active_game_for_user(user.id)
+
+    if not game:
+        await update.message.reply_text("❌ Aktif bir oyunda değilsin.")
+        return
+
+    if chat_id != update.effective_chat.id:
+        await update.message.reply_text("❌ Bu komutu oynadığın oyunun grubunda kullan.")
+        return
+
+    res = pass_turn(chat_id, user.id)
+    if not res["ok"]:
+        reasons = {
+            "SIRA_DEGIL": "⏳ Sıra sende değil.",
+            "ONCE_CEK": "❌ Pas geçmeden önce kart çekmelisin (/cek).",
+            "OYUN_YOK": "❌ Aktif bir oyun bulunamadı.",
+        }
+        await update.message.reply_text(reasons.get(res["reason"], "❌ Pas geçilemedi."))
+        return
+
+    actor_mention = mention_html(user.id, player_name(game, user.id))
+    await context.bot.send_message(
+        chat_id,
+        f"⏭ {actor_mention} pas geçti.",
+        parse_mode="HTML",
+    )
+    await announce_turn(context, chat_id)
+
+
+# Inline query: sira kimdeyse SADECE ona ozel oynanabilir kartlari + kart cekme/pas secenegini gosterir
 async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
     user = inline_query.from_user
@@ -309,6 +377,8 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     if my_turn:
+        has_drawn = game.get("has_drawn", {}).get(user.id, False)
+
         try:
             deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, chat_id)
             results.append(
@@ -321,6 +391,17 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
+
+        # Sadece kart çektikten sonra pas geçilebilir
+        if has_drawn:
+            results.append(
+                InlineQueryResultArticle(
+                    id="pass",
+                    title="⏭ Pas Geç",
+                    description="Çektiğin kartı oynamak istemiyorsan sırayı geç",
+                    input_message_content=InputTextMessageContent("⏭ pas geçildi"),
+                )
+            )
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
@@ -349,6 +430,30 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         if not game.get("winner"):
             await announce_turn(context, chat_id)
+        return
+
+    if result_id == "pass":
+        res = pass_turn(chat_id, user.id)
+        if not res["ok"]:
+            reasons = {
+                "SIRA_DEGIL": "sıra artık sende değildi",
+                "ONCE_CEK": "önce kart çekmen gerekiyordu",
+                "OYUN_YOK": "aktif bir oyun bulunamadı",
+            }
+            await context.bot.send_message(
+                chat_id,
+                f"⚠️ {actor_mention} pas geçmeye çalıştı ama işlenmedi "
+                f"({reasons.get(res['reason'], res['reason'])}).",
+                parse_mode="HTML",
+            )
+            return
+
+        await context.bot.send_message(
+            chat_id,
+            f"⏭ {actor_mention} pas geçti.",
+            parse_mode="HTML",
+        )
+        await announce_turn(context, chat_id)
         return
 
     card_code = result_id.split("#", 1)[0]
@@ -454,7 +559,7 @@ async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        """ 🎮 Yardım /start - Botu başlatır /oyun - Yeni oyun oluşturur /katil - Oyuna katılır /baslat - Oyunu başlatır /bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler) /profil - Profilini gösterir Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin. Sıra sende olduğunda aynı buton oynanabilir kartları listeler, seçtiğin otomatik oynanır. """
+        """ 🎮 Yardım /start - Botu başlatır /oyun - Yeni oyun oluşturur /katil - Oyuna katılır /baslat - Oyunu başlatır /bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler) /profil - Profilini gösterir /cek - Sıra sendeyken kart çeker /pas - Kart çektikten sonra sırayı geçer Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin. Sıra sende olduğunda aynı buton oynanabilir kartları, kart çekme ve pas geçme seçeneklerini listeler, seçtiğin otomatik uygulanır. """
     )
 
 
@@ -468,13 +573,6 @@ def main():
     app.add_handler(CommandHandler("baslat", baslat))
     app.add_handler(CommandHandler("bitir", bitir))
     app.add_handler(CommandHandler("profil", profil))
-    app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(InlineQueryHandler(inline_hand))
-    app.add_handler(ChosenInlineResultHandler(chosen_result))
-
-    print("✅ Meyus UNO çalışıyor...")
-    app.run_polling()
-
-
-if __name__ == "__main__":
-    main()
+    app.add_handler(CommandHandler("cek", cek))
+    app.add_handler(CommandHandler("pas", pas))
+    app.add_han
