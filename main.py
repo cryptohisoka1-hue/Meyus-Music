@@ -1,9 +1,6 @@
 import asyncio
 import uuid
 
-import os
-
-CACHE_CHAT_ID = int(os.environ.get("CACHE_CHAT_ID"))
 from game import *
 from cards_data import (
     card_image_url, card_display_label, DECK_BACK_CODE,
