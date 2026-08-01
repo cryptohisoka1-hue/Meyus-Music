@@ -537,7 +537,35 @@ async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    was_started = game.get("started", False)async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    was_started = game.get("started", False)
+    end_game(chat_id)
+    lobby_messages.pop(chat_id, None)
+
+    if was_started:
+        await update.message.reply_text(
+            f"🛑 Oyun {user.first_name} tarafından sonlandırıldı.\n\n"
+            f"Yeni oyun için /oyun yazabilirsiniz."
+        )
+    else:
+        await update.message.reply_text(
+            f"🛑 Lobi {user.first_name} tarafından kapatıldı.\n\n"
+            f"Yeni oyun için /oyun yazabilirsiniz."
+        )
+
+
+# /profil
+async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = db.get_user(update.effective_user.id)
+    if not user:
+        await update.message.reply_text("Önce /start kullan.")
+        return
+
+    await update.message.reply_text(
+        f"""👤 Profil 🪙 Coin: {user[3]} 🏆 Galibiyet: {user[4]} 🎮 Oyun: {user[5]} ⭐ Seviye: {user[6]} ✨ XP: {user[7]} """
+    )
+
+
+async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         """ 🎮 Yardım /start - Botu başlatır /oyun - Yeni oyun oluşturur /katil - Oyuna katılır /baslat - Oyunu başlatır /bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler) /profil - Profilini gösterir /cek - Sıra sendeyken kart çeker /pas - Kart çektikten sonra sırayı geçer Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin. Sıra sende olduğunda aynı buton oynanabilir kartları, kart çekme ve pas geçme seçeneklerini listeler, seçtiğin otomatik uygulanır. """
     )
