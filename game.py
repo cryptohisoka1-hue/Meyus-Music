@@ -1,4 +1,4 @@
-'''import random
+import random
 import json
 
 COLORS = ['red', 'blue', 'green', 'yellow']
@@ -106,18 +106,3 @@ class UnoGame:
         game.started = data.get('started', False)
         return game
 '''
-
-with open('/mnt/agents/output/game.py', 'w', encoding='utf-8') as f:
-    f.write(game_content)
-print("✅ game.py (player_names eklendi)")
-
-# requirements.txt
-req_content = '''python-telegram-bot>=20.0
-'''
-with open('/mnt/agents/output/requirements.txt', 'w', encoding='utf-8') as f:
-    f.write(req_content)
-print("✅ requirements.txt")
-
-print("\n" + "="*50)
-print("TÜM DOSYALAR BAŞARIYLA OLUŞTURULDU!")
-print("="*50)
