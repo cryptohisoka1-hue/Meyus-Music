@@ -3,43 +3,17 @@ import random
 # chat_id -> oyun bilgisi
 games = {}
 
-# user_id -> chat_id (kullanicinin aktif oyunda oldugu grup, inline query icin hizli lookup)
+# user_id -> chat_id (kullanıcının aktif oyunda olduğu grup, inline query için hızlı lookup)
 user_active_chat = {}
 
 COLORS = ["kirmizi", "yesil", "mavi", "sari"]
 SYMBOLS = ["artiiki", "durdur", "yonvedegis"]
 
 
-# Oyun başlatılırken ekle (start_game içinde):
-# game["has_drawn"] = {p["id"]: False for p in game["players"]}
-
-# draw_card fonksiyonunda (başarılı çekim sonrası):
-# game["has_drawn"][user_id] = True
-
-# play_card fonksiyonunda (başarılı oynama sonrası):
-# game["has_drawn"][user_id] = False
-
-def pass_turn(chat_id, user_id):
-    """Oyuncu pas geçer. Sadece kart çektikten sonra geçerlidir."""
-    game = games.get(chat_id)
-    if not game or not game.get("started") or game.get("winner"):
-        return {"ok": False, "reason": "OYUN_YOK"}
-    if current_player(chat_id) != user_id:
-        return {"ok": False, "reason": "SIRA_DEGIL"}
-    if not game.get("has_drawn", {}).get(user_id, False):
-        return {"ok": False, "reason": "ONCE_CEK"}
-    
-    game["has_drawn"][user_id] = False
-    # Sırayı geçir (senin mevcut fonksiyonun neyse onu çağır)
-    _advance_turn(chat_id)  # ← Bunu kendi sıra geçirme fonksiyonunla değiştir
-    return {"ok": True}
-    
-
-
 def create_deck():
     """
-    Kart kodlari assets/cards/<kod>.png dosya adlariyla birebir eslesir.
-    Ornek: 'kirmizi_7', 'kirmizi_artiiki', 'wild_renk', 'wild_artidort'
+    Kart kodları assets/cards/<kod>.png dosya adlarıyla birebir eşleşir.
+    Örnek: 'kirmizi_7', 'kirmizi_artiiki', 'wild_renk', 'wild_artidort'
     """
     deck = []
     for color in COLORS:
@@ -83,15 +57,16 @@ def create_game(chat_id, owner_id):
         "owner": owner_id,
         "players": [],       # [{id, name}]
         "deck": [],
-        "discard": [],       # oynanmis kartlarin yigini (top_card = discard[-1])
+        "discard": [],       # oynanmış kartların yığını (top_card = discard[-1])
         "hands": {},         # uid -> [card_code, ...]
         "started": False,
         "turn_order": [],    # [uid, ...]
         "turn_index": 0,
         "direction": 1,
-        "top_color": None,   # joker sonrasi secilen renk (renksiz kartta card_color kullanilir)
-        "pending_wild": None,  # joker oynayip renk secmesi beklenen uid
+        "top_color": None,   # joker sonrası seçilen renk
+        "pending_wild": None,  # joker oynayıp renk seçmesi beklenen uid
         "winner": None,
+        "has_drawn": {},     # uid -> bool (bilgi amaçlı, zorunlu değil)
     }
     return True
 
@@ -110,12 +85,12 @@ def join_game(chat_id, user_id, name):
 
 
 def _draw_from_deck(game, n=1):
-    """Deste biterse, atilan kartlardan (son ust kart haric) yeni deste olusturur."""
+    """Deste bitince, atılan kartlardan (son üst kart hariç) yeni deste oluşturur."""
     cards = []
     for _ in range(n):
         if not game["deck"]:
             if len(game["discard"]) <= 1:
-                break  # kart kalmadi, elde ne varsa o
+                break
             top = game["discard"][-1]
             reshuffled = game["discard"][:-1]
             random.shuffle(reshuffled)
@@ -133,6 +108,7 @@ def start_game(chat_id):
     game["turn_index"] = 0
     game["direction"] = 1
     game["winner"] = None
+    game["has_drawn"] = {p["id"]: False for p in game["players"]}
 
     for player in game["players"]:
         hand = []
@@ -141,7 +117,7 @@ def start_game(chat_id):
         game["hands"][player["id"]] = hand
         user_active_chat[player["id"]] = chat_id
 
-    # baslangic ust karti: joker olmayan bir kart cikana kadar cek
+    # Başlangıç üst kartı: joker olmayan bir kart çıkana kadar çek
     first = game["deck"].pop()
     while is_wild(first):
         game["deck"].insert(0, first)
@@ -204,7 +180,7 @@ def _advance_turn(game, steps=1):
 
 def play_card(chat_id, user_id, card_code):
     """
-    Donus: dict {
+    Dönüş: dict {
       'ok': bool, 'reason': str (hata durumunda),
       'effect': 'normal'|'skip'|'reverse'|'draw2'|'draw4'|None,
       'needs_color': bool, 'win': bool
@@ -227,6 +203,9 @@ def play_card(chat_id, user_id, card_code):
 
     hand.remove(card_code)
     game["discard"].append(card_code)
+
+    # Kart oynanınca has_drawn sıfırlanır
+    game["has_drawn"][user_id] = False
 
     if not is_wild(card_code):
         game["top_color"] = card_color(card_code)
@@ -283,6 +262,10 @@ def choose_color(chat_id, user_id, color):
 
 
 def draw_card(chat_id, user_id):
+    """
+    Kart çeker. Sıra OTOMATİK GEÇMEZ.
+    Oyuncu çektiği kartı oynayabilir veya pas geçebilir.
+    """
     game = games[chat_id]
 
     if game.get("winner"):
@@ -294,8 +277,27 @@ def draw_card(chat_id, user_id):
     drawn = _draw_from_deck(game, 1)
     if drawn:
         game["hands"][user_id].extend(drawn)
-    _advance_turn(game, steps=1)
+        game["has_drawn"][user_id] = True
+
+    # Sıra ilerlemez → oyuncu isterse oynar, isterse pas geçer
     return {"ok": True, "drawn": drawn}
+
+
+def pass_turn(chat_id, user_id):
+    """
+    Oyuncu pas geçer.
+    Artık her zaman izinlidir (kart çekmiş olmak zorunlu değil).
+    """
+    game = games.get(chat_id)
+    if not game or not game.get("started") or game.get("winner"):
+        return {"ok": False, "reason": "OYUN_YOK"}
+
+    if current_player(chat_id) != user_id:
+        return {"ok": False, "reason": "SIRA_DEGIL"}
+
+    game["has_drawn"][user_id] = False
+    _advance_turn(game, steps=1)
+    return {"ok": True}
 
 
 def end_game(chat_id):
