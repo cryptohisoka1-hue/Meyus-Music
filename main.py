@@ -374,7 +374,8 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
 
-    if my_turn:
+        if my_turn:
+        # Mevcut kart çekme seçeneği (değişmiyor)
         try:
             deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, storage_chat)
             results.append(
@@ -387,6 +388,19 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
+        
+        # ⬇️ PAS SEÇENEĞİ EKLE
+        has_drawn = game.get("has_drawn", {}).get(user.id, False)
+        if has_drawn:
+            results.append(
+                InlineQueryResultArticle(
+                    id="pass",
+                    title="⏭ Pas Geç",
+                    input_message_content=InputTextMessageContent("⏭ Pas geçiyorum"),
+                    description="Kart çektin, oynamak istemiyorsan pas geç",
+                )
+            )
+
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
