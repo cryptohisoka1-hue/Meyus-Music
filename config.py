@@ -1,5 +1,12 @@
 import os
 
+BOT_TOKEN = os.getenv("BOT_TOKEN", "TOKENINIZ")
+# Depo sohbeti yoksa None bırakın, bot otomatik oyun grubunu kullanır
+STORAGE_CHAT_ID = os.getenv("STORAGE_CHAT_ID")
+if STORAGE_CHAT_ID:
+    STORAGE_CHAT_ID = int(STORAGE_CHAT_ID)
+STICKER_SET_NAME = os.getenv("STICKER_SET_NAME", "meyus_uno_cards")
+
 # GUVENLIK UYARISI: Token'i asla kod icine yazip GitHub'a push etme!
 # Eski token public repoda gorunuyordu -> BotFather'dan /revoke ile IPTAL ET,
 # yeni token al ve asagidaki gibi ortam degiskeni (environment variable) olarak ver.
