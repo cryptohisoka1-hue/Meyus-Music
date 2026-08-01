@@ -3,5 +3,5 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+DB_PATH = os.getenv("DB_PATH", "uno.db")
