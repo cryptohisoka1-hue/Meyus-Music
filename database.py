@@ -1,129 +1,79 @@
 import sqlite3
-import sys
-from pathlib import Path
+import os
 
-DB_FOLDER = Path(__file__).resolve().parent / "data"
-
-try:
-    DB_FOLDER.mkdir(exist_ok=True)
-except Exception as e:
-    print(f"[database.py] 'data' klasoru olusturulamadi: {e}", file=sys.stderr)
-    raise
-
-DB_PATH = DB_FOLDER / "uno.db"
-
+DB_PATH = os.getenv("DB_PATH", "uno_bot.db")
 
 class Database:
-    def __init__(self):
-        self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-        self.cursor = self.conn.cursor()
-        self.create_tables()
+    def __init__(self, db_path=DB_PATH):
+        self.db_path = db_path
+        self._init_db()
 
-    def create_tables(self):
-        self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users(
-                user_id INTEGER PRIMARY KEY,
-                first_name TEXT,
-                username TEXT,
-                coins INTEGER DEFAULT 100,
-                wins INTEGER DEFAULT 0,
-                games INTEGER DEFAULT 0,
-                level INTEGER DEFAULT 1,
-                xp INTEGER DEFAULT 0
-            )
-        """)
-        self.conn.commit()
-
-    # ---------------- USER ----------------
-    def add_user(self, user_id, first_name, username):
-        self.cursor.execute("""
-            INSERT OR IGNORE INTO users
-            (user_id, first_name, username)
-            VALUES (?, ?, ?)
-        """, (user_id, first_name, username))
-        self.conn.commit()
+    def _init_db(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    coins INTEGER DEFAULT 0,
+                    wins INTEGER DEFAULT 0,
+                    games INTEGER DEFAULT 0,
+                    level INTEGER DEFAULT 1,
+                    xp INTEGER DEFAULT 0
+                )
+            """)
+            conn.commit()
 
     def get_user(self, user_id):
-        self.cursor.execute("""
-            SELECT * FROM users
-            WHERE user_id=?
-        """, (user_id,))
-        return self.cursor.fetchone()
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+            return cur.fetchone()
 
-    # ---------------- COIN ----------------
-    def add_coin(self, user_id, amount):
-        self.cursor.execute("""
-            UPDATE users
-            SET coins = coins + ?
-            WHERE user_id=?
-        """, (amount, user_id))
-        self.conn.commit()
-
-    def remove_coin(self, user_id, amount):
-        self.cursor.execute("""
-            UPDATE users
-            SET coins = MAX(0, coins - ?)
-            WHERE user_id=?
-        """, (amount, user_id))
-        self.conn.commit()
-
-    # ---------------- XP + LEVEL ----------------
-    def add_xp(self, user_id, amount):
-        # XP ekle
-        self.cursor.execute("""
-            UPDATE users
-            SET xp = xp + ?
-            WHERE user_id=?
-        """, (amount, user_id))
-        self.conn.commit()
-
-        # Seviye kontrolü (her 100 XP = 1 seviye)
-        user = self.get_user(user_id)
-        if not user:
-            return
-
-        current_xp = user[7]
-        current_level = user[6]
-        new_level = (current_xp // 100) + 1
-
-        if new_level > current_level:
-            self.cursor.execute("""
-                UPDATE users
-                SET level = ?
-                WHERE user_id=?
-            """, (new_level, user_id))
-            self.conn.commit()
-
-    # ---------------- GAME ----------------
-    def add_game(self, user_id):
-        self.cursor.execute("""
-            UPDATE users
-            SET games = games + 1
-            WHERE user_id=?
-        """, (user_id,))
-        self.conn.commit()
+    def add_user(self, user_id, username, first_name):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
+                (user_id, username, first_name)
+            )
+            conn.commit()
 
     def add_win(self, user_id):
-        self.cursor.execute("""
-            UPDATE users
-            SET wins = wins + 1
-            WHERE user_id=?
-        """, (user_id,))
-        self.conn.commit()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE users SET wins = wins + 1 WHERE user_id = ?",
+                (user_id,)
+            )
+            conn.commit()
 
-    # ---------------- LEADERBOARD ----------------
-    def leaderboard(self):
-        self.cursor.execute("""
-            SELECT first_name, wins, games, level, coins
-            FROM users
-            ORDER BY wins DESC, level DESC
-            LIMIT 10
-        """)
-        return self.cursor.fetchall()
+    def add_game(self, user_id):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE users SET games = games + 1 WHERE user_id = ?",
+                (user_id,)
+            )
+            conn.commit()
 
+    def add_coin(self, user_id, amount):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE users SET coins = coins + ? WHERE user_id = ?",
+                (amount, user_id)
+            )
+            conn.commit()
 
-try:
-    db = Database()
-except Exception as e:
-    print(f"[database.py] Database() baslatilamadi: {e}", file=sys.stderr)
-    raise
+    def add_xp(self, user_id, amount):
+        with sqlite3.connect(self.db_path) as conn:
+            # XP ekle ve seviye kontrolü
+            conn.execute(
+                "UPDATE users SET xp = xp + ? WHERE user_id = ?",
+                (amount, user_id)
+            )
+            # Basit seviye sistemi: her 100 XP = 1 seviye
+            conn.execute(
+                "UPDATE users SET level = (xp / 100) + 1 WHERE user_id = ?",
+                (user_id,)
+            )
+            conn.commit()
+
+# Global instance
+db = Database()
