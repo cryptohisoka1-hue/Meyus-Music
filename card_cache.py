@@ -41,3 +41,19 @@ async def get_card_file_id(bot, card_code: str, storage_chat_id: int) -> str:
         pass
 
     return file_id
+
+
+async def prewarm_all_cards(bot, storage_chat_id: int, card_codes) -> None:
+    """
+    Butun kart gorsellerini onceden indirip cache'ler (arka planda, fire-and-forget
+    olarak cagrilmali). Telegram flood limitine takilmamak icin sirayla, aralarda
+    kucuk bir bekleme ile calisir.
+    """
+    for card_code in card_codes:
+        if card_code in _file_id_cache:
+            continue
+        try:
+            await get_card_file_id(bot, card_code, storage_chat_id)
+        except Exception:
+            pass
+        await asyncio.sleep(0.05)
