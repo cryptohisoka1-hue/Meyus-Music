@@ -24,7 +24,7 @@ from telegram.ext import (
     ContextTypes,
 )
 from telegram.error import ChatMigrated
-from config import BOT_TOKEN
+from config import BOT_TOKEN, CACHE_CHAT_ID
 from database import db
 
 
@@ -137,10 +137,13 @@ async def _do_start_game(context, chat_id):
     color_tr = COLOR_NAME_TR.get(game["top_color"], game["top_color"])
 
     # Tum kart gorsellerini arka planda onceden cache'le (bir sonraki
-    # @bot sorgusu bekletmeden aninda calissin diye).
-    asyncio.create_task(prewarm_all_cards(context.bot, chat_id, ALL_CARD_CODES))
+    # @bot sorgusu bekletmeden aninda calissin diye). Onbellekleme icin
+    # oyun grubu DEGIL, gizli depo sohbeti (CACHE_CHAT_ID) kullanilir ki
+    # oyunculara kartlar bot tarafindan "kendiliginden" gonderiliyormus
+    # gibi gorunmesin.
+    asyncio.create_task(prewarm_all_cards(context.bot, CACHE_CHAT_ID, ALL_CARD_CODES))
 
-    file_id = await get_card_file_id(context.bot, t_card, chat_id)
+    file_id = await get_card_file_id(context.bot, t_card, CACHE_CHAT_ID)
     await context.bot.send_photo(
         chat_id,
         photo=file_id,
@@ -357,7 +360,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = []
     for idx, card_code in enumerate(hand):
         try:
-            file_id = await get_card_file_id(context.bot, card_code, chat_id)
+            file_id = await get_card_file_id(context.bot, card_code, CACHE_CHAT_ID)
         except Exception as e:
             print(f"⚠️ Kart görseli yüklenemedi ({card_code}): {e}")
             continue
@@ -382,7 +385,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
         has_drawn = game.get("has_drawn", {}).get(user.id, False)
 
         try:
-            deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, chat_id)
+            deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, CACHE_CHAT_ID)
             results.append(
                 InlineQueryResultCachedPhoto(
                     id="draw",
