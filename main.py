@@ -1,8 +1,12 @@
+import asyncio
 import uuid
 
 from game import *
-from cards_data import card_image_url, card_display_label, DECK_BACK_CODE, COLOR_NAME_TR, COLOR_LABELS
-from card_cache import get_card_file_id
+from cards_data import (
+    card_image_url, card_display_label, DECK_BACK_CODE,
+    COLOR_NAME_TR, COLOR_LABELS, ALL_CARD_CODES,
+)
+from card_cache import get_card_file_id, prewarm_all_cards
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -36,6 +40,11 @@ def mention_html(uid, name):
     return f'<a href="tg://user?id={uid}">{safe_name}</a>'
 
 
+HAND_BUTTON = InlineKeyboardMarkup([[
+    InlineKeyboardButton("🎴 Kartlarımı Gör / Oyna", switch_inline_query_current_chat="")
+]])
+
+
 async def announce_turn(context: ContextTypes.DEFAULT_TYPE, chat_id):
     game = games.get(chat_id)
     if not game or not game.get("started") or game.get("winner"):
@@ -49,8 +58,9 @@ async def announce_turn(context: ContextTypes.DEFAULT_TYPE, chat_id):
         chat_id,
         f"🔁 Sıra sende {mention_html(uid, name)}!\n"
         f"🎨 Geçerli renk: <b>{color_tr}</b>\n\n"
-        f"Kartını oynamak veya çekmek için gruba <code>@{context.bot.username}</code> yaz.",
+        f"Aşağıdaki butona dokun, kartların otomatik açılsın 👇",
         parse_mode="HTML",
+        reply_markup=HAND_BUTTON,
     )
 
 
@@ -105,12 +115,13 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 /oyun - Yeni oyun oluştur
 /katil - Oyuna katıl
 /baslat - Oyunu başlat
+/bitir - Oyunu/lobiyi sonlandır
 /profil - Profilin
 
-🃏 Sıra sende olduğunda, grup sohbetinde @{context.bot.username} yaz —
-oynayabileceğin kartlar (ve kart çekme seçeneği) sadece sana özel
-bir önizleme olarak açılır. Seçtiğin kart otomatik oynanır, sıra
-bottan devam eder.
+🃏 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini
+görebilirsin (sıra sende değilse sadece görüntülemek için).
+Sıra sende olduğunda aynı buton oynanabilir kartlarını ve kart
+çekme seçeneğini listeler; seçtiğin otomatik oynanır.
 
 İyi eğlenceler ❤️
 """
@@ -147,6 +158,10 @@ async def _do_start_game(context, chat_id):
     t_card = top_card(chat_id)
     color_tr = COLOR_NAME_TR.get(game["top_color"], game["top_color"])
 
+    # Tum kart gorsellerini arka planda onceden cache'le (bir sonraki
+    # @bot sorgusu bekletmeden aninda calissin diye).
+    asyncio.create_task(prewarm_all_cards(context.bot, chat_id, ALL_CARD_CODES))
+
     file_id = await get_card_file_id(context.bot, t_card, chat_id)
     await context.bot.send_photo(
         chat_id,
@@ -154,10 +169,10 @@ async def _do_start_game(context, chat_id):
         caption=(
             "🚀 <b>Oyun başladı!</b>\n\n"
             f"🎨 Başlangıç rengi: <b>{color_tr}</b>\n\n"
-            f"Elindeki kartları görmek ve oynamak için gruba "
-            f"<code>@{context.bot.username}</code> yaz."
+            f"Herkes istediği an elini görebilir, sadece sırası gelen oynayabilir."
         ),
         parse_mode="HTML",
+        reply_markup=HAND_BUTTON,
     )
     await announce_turn(context, chat_id)
 
@@ -289,42 +304,46 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if current_player(chat_id) != user.id:
-        await inline_query.answer(
-            [], switch_pm_text="⏳ Sıra sende değil", switch_pm_parameter="wait",
-            cache_time=1, is_personal=True,
-        )
-        return
+    my_turn = current_player(chat_id) == user.id
+    hand = game["hands"].get(user.id, [])
+    legal = set(legal_cards_for(chat_id, user.id)) if my_turn else set()
 
-    legal = legal_cards_for(chat_id, user.id)
     results = []
-    for idx, card_code in enumerate(legal):
+    for idx, card_code in enumerate(hand):
         try:
             file_id = await get_card_file_id(context.bot, card_code, chat_id)
         except Exception:
             continue
+
+        if my_turn and card_code in legal:
+            desc = "✅ Oynamak için dokun"
+        elif my_turn:
+            desc = "🚫 Şu an geçersiz (renk/sayı uymuyor)"
+        else:
+            desc = "👁 Sadece görüntüleme — sıra sende değil"
+
         results.append(
             InlineQueryResultCachedPhoto(
                 id=f"{card_code}#{idx}",
                 photo_file_id=file_id,
                 title=f"🎴 {card_display_label(card_code)}",
-                description="Oynamak için dokun",
+                description=desc,
             )
         )
 
-    # Kart cekme secenegi her zaman mevcut
-    try:
-        deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, chat_id)
-        results.append(
-            InlineQueryResultCachedPhoto(
-                id="draw",
-                photo_file_id=deck_file_id,
-                title="🂠 Kart Çek",
-                description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
+    if my_turn:
+        try:
+            deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, chat_id)
+            results.append(
+                InlineQueryResultCachedPhoto(
+                    id="draw",
+                    photo_file_id=deck_file_id,
+                    title="🂠 Kart Çek",
+                    description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
+                )
             )
-        )
-    except Exception:
-        pass
+        except Exception:
+            pass
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
@@ -402,6 +421,48 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await announce_turn(context, chat_id)
 
 
+# /bitir
+async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = update.effective_user
+
+    if chat_id not in games:
+        await update.message.reply_text("❌ Bu grupta açık bir oyun yok.")
+        return
+
+    game = games[chat_id]
+    is_owner = user.id == game.get("owner")
+
+    is_admin = False
+    if not is_owner:
+        try:
+            member = await context.bot.get_chat_member(chat_id, user.id)
+            is_admin = member.status in ("administrator", "creator")
+        except Exception:
+            is_admin = False
+
+    if not (is_owner or is_admin):
+        await update.message.reply_text(
+            "⛔ Sadece oyunu açan kişi veya grup yöneticileri /bitir kullanabilir."
+        )
+        return
+
+    was_started = game.get("started", False)
+    end_game(chat_id)
+    lobby_messages.pop(chat_id, None)
+
+    if was_started:
+        await update.message.reply_text(
+            f"🛑 Oyun {user.first_name} tarafından sonlandırıldı.\n\n"
+            f"Yeni oyun için /oyun yazabilirsiniz."
+        )
+    else:
+        await update.message.reply_text(
+            f"🛑 Lobi {user.first_name} tarafından kapatıldı.\n\n"
+            f"Yeni oyun için /oyun yazabilirsiniz."
+        )
+
+
 # /profil
 async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(update.effective_user.id)
@@ -430,10 +491,12 @@ async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /oyun - Yeni oyun oluşturur
 /katil - Oyuna katılır
 /baslat - Oyunu başlatır
+/bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler)
 /profil - Profilini gösterir
 
-Sıra sende olduğunda gruba @botadi yaz — oynanabilir kartların
-ve kart çekme seçeneği sana özel açılır. Seçtiğinde otomatik oynanır.
+Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin.
+Sıra sende olduğunda aynı buton oynanabilir kartları listeler,
+seçtiğin otomatik oynanır.
 """
     )
 
@@ -446,6 +509,7 @@ def main():
     app.add_handler(CommandHandler("oyun", oyun))
     app.add_handler(CommandHandler("katil", katil))
     app.add_handler(CommandHandler("baslat", baslat))
+    app.add_handler(CommandHandler("bitir", bitir))
     app.add_handler(CommandHandler("profil", profil))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(InlineQueryHandler(inline_hand))
