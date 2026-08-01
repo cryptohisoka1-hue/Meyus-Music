@@ -44,6 +44,13 @@ HAND_BUTTON = InlineKeyboardMarkup([[
     InlineKeyboardButton("🎴 Kartlarımı Gör / Oyna", switch_inline_query_current_chat="")
 ]])
 
+# Inline sonuçlarına bos bir reply_markup ekliyoruz ki Telegram bize
+# chosen_inline_result icinde inline_message_id versin. Bu sayede secilen
+# mesaji (kart gorseli/detayi yerine gecen yer tutucu metni) islem
+# bittikten sonra kisa/notr bir sonuc metnine cevirebiliyoruz; boylece
+# elindeki kart hicbir zaman grupta gorunur/kalici olmuyor.
+_EMPTY_MARKUP = InlineKeyboardMarkup([])
+
 
 async def announce_turn(context: ContextTypes.DEFAULT_TYPE, chat_id):
     game = games.get(chat_id)
@@ -119,9 +126,11 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 /profil - Profilin
 
 🃏 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini
-görebilirsin (sıra sende değilse sadece görüntülemek için).
-Sıra sende olduğunda aynı buton oynanabilir kartlarını ve kart
-çekme seçeneğini listeler; seçtiğin otomatik oynanır.
+görebilirsin (sıra sende değilse sadece görüntülemek için, hiçbir şey
+gruba gönderilmez).
+Sıra sende olduğunda aynı buton oynanabilir kartlarını, kart çekme ve
+"pas geç" seçeneklerini listeler; seçtiğin işlem otomatik uygulanır ama
+kartların gruba görsel olarak asla düşmez.
 
 İyi eğlenceler ❤️
 """
@@ -290,7 +299,11 @@ async def baslat(update, context):
     await _do_start_game(context, chat_id)
 
 
-# Inline query: sira kimdeyse SADECE ona ozel oynanabilir kartlari + kart cekme secenegini gosterir
+# Inline query: sira kimdeyse SADECE ona ozel oynanabilir kartlari + kart cekme
+# + pas gecme secenegini gosterir. Kartlar InlineQueryResultArticle olarak
+# gonderilir; secilen sonuc gruba KARTIN GORSELINI DEGIL, notr/kisa bir
+# yer tutucu metni gonderir (elin gizli kalir, chosen_result bu mesaji
+# islem bittikten sonra kisa bir sonuc metnine cevirir).
 async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
     user = inline_query.from_user
@@ -310,40 +323,47 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     results = []
     for idx, card_code in enumerate(hand):
-        try:
-            file_id = await get_card_file_id(context.bot, card_code, chat_id)
-        except Exception:
-            continue
-
         if my_turn and card_code in legal:
             desc = "✅ Oynamak için dokun"
+            placeholder = "🎴 Hamle işleniyor…"
         elif my_turn:
             desc = "🚫 Şu an geçersiz (renk/sayı uymuyor)"
+            placeholder = "🚫 Geçersiz hamle"
         else:
             desc = "👁 Sadece görüntüleme — sıra sende değil"
+            placeholder = "👁 Görüntülendi (özel)"
 
         results.append(
-            InlineQueryResultCachedPhoto(
+            InlineQueryResultArticle(
                 id=f"{card_code}#{idx}",
-                photo_file_id=file_id,
                 title=f"🎴 {card_display_label(card_code)}",
                 description=desc,
+                thumbnail_url=card_image_url(card_code),
+                input_message_content=InputTextMessageContent(placeholder),
+                reply_markup=_EMPTY_MARKUP,
             )
         )
 
     if my_turn:
-        try:
-            deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, chat_id)
-            results.append(
-                InlineQueryResultCachedPhoto(
-                    id="draw",
-                    photo_file_id=deck_file_id,
-                    title="🂠 Kart Çek",
-                    description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
-                )
+        results.append(
+            InlineQueryResultArticle(
+                id="draw",
+                title="🂠 Kart Çek",
+                description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
+                thumbnail_url=card_image_url(DECK_BACK_CODE),
+                input_message_content=InputTextMessageContent("🂠 Kart çekiliyor…"),
+                reply_markup=_EMPTY_MARKUP,
             )
-        except Exception:
-            pass
+        )
+        results.append(
+            InlineQueryResultArticle(
+                id="pas",
+                title="🚫 Pas Geç",
+                description="Kart oynamadan/çekmeden sırayı devret",
+                input_message_content=InputTextMessageContent("🚫 Pas geçiliyor…"),
+                reply_markup=_EMPTY_MARKUP,
+            )
+        )
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
@@ -352,18 +372,59 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chosen = update.chosen_inline_result
     user = chosen.from_user
     result_id = chosen.result_id
+    inline_message_id = chosen.inline_message_id
+
+    async def finalize(text):
+        # Secilen inline mesaji, islem bittikten sonra kisa/notr bir
+        # metne cevirir. Boylece kartlar hicbir zaman grupta gorsel
+        # olarak asili kalmaz.
+        if inline_message_id:
+            try:
+                await context.bot.edit_message_text(text, inline_message_id=inline_message_id)
+            except Exception:
+                pass
 
     chat_id, game = find_active_game_for_user(user.id)
     if not game:
+        await finalize("⚠️ Aktif oyun bulunamadı.")
         return
 
     actor_mention = mention_html(user.id, player_name(game, user.id))
+    my_turn = current_player(chat_id) == user.id
+
+    if result_id == "pas":
+        if not my_turn:
+            await finalize("👁 Görüntülendi (özel)")
+            return
+        try:
+            res = pass_turn(chat_id, user.id)
+        except NameError:
+            # game.py icinde pass_turn(chat_id, user_id) fonksiyonu tanimli
+            # degil. Eklenene kadar pas gecme ozelligi devre disi kalir.
+            await finalize("⚠️ 'Pas geç' özelliği aktif değil (game.py'de pass_turn eksik).")
+            return
+
+        if not res or not res.get("ok", False):
+            await finalize("⚠️ Pas geçilemedi.")
+            return
+
+        await finalize("🚫 Pas geçildi")
+        await context.bot.send_message(
+            chat_id,
+            f"🚫 {actor_mention} pas geçti, sırasını kimseye kart göstermeden devretti.",
+            parse_mode="HTML",
+        )
+        if not game.get("winner"):
+            await announce_turn(context, chat_id)
+        return
 
     if result_id == "draw":
         res = draw_card(chat_id, user.id)
         if not res["ok"]:
+            await finalize("⚠️ Kart çekilemedi.")
             return
         n = len(res["drawn"])
+        await finalize(f"🂠 {n} kart çekildi" if n else "🂠 Deste boş")
         await context.bot.send_message(
             chat_id,
             f"🂠 {actor_mention} kart çekti ({n} kart)."
@@ -384,6 +445,7 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "GECERSIZ_HAMLE": "bu hamle geçerli değildi (renk/sayı uymuyor)",
             "OYUN_BITTI": "oyun zaten bitmiş",
         }
+        await finalize("⚠️ Hamle geçersiz")
         await context.bot.send_message(
             chat_id,
             f"⚠️ {actor_mention} geçersiz bir kart gönderdi ({reasons.get(res['reason'], res['reason'])}), "
@@ -391,6 +453,8 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
         return
+
+    await finalize("✅ Kart oynandı")
 
     if res["win"]:
         await finish_game(context, chat_id, user.id)
@@ -495,8 +559,9 @@ async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /profil - Profilini gösterir
 
 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin.
-Sıra sende olduğunda aynı buton oynanabilir kartları listeler,
-seçtiğin otomatik oynanır.
+Sıra sende olduğunda aynı buton oynanabilir kartları, kart çekmeyi ve
+"pas geç" seçeneğini listeler; seçtiğin işlem otomatik uygulanır ama
+kartın gruba görsel olarak asla gönderilmez.
 """
     )
 
@@ -521,3 +586,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+                
