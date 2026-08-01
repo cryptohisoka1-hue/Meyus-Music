@@ -1,4 +1,4 @@
-'''from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from game import get_card_display
 
 
@@ -68,8 +68,3 @@ def hand_text(hand):
     for i, card in enumerate(hand, 1):
         parts.append(f"{i}:{get_card_display(card)}")
     return " ".join(parts)
-'''
-
-with open('/mnt/agents/output/callbacks.py', 'w', encoding='utf-8') as f:
-    f.write(callbacks_content)
-print("✅ callbacks.py")
