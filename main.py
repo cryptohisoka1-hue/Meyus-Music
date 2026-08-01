@@ -122,8 +122,8 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 
 🃏 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini
 görebilirsin (sıra sende değilse sadece görüntülemek için).
-Sıra sende olduğunda aynı buton oynanabilir kartlarını ve kart
-çekme seçeneğini listeler; seçtiğin otomatik oynanır.
+Sıra sende olduğunda aynı buton oynanabilir kartlarını, kart
+çekme ve pas seçeneklerini listeler.
 
 İyi eğlenceler ❤️
 """
@@ -303,7 +303,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     legal = set(legal_cards_for(chat_id, user.id)) if my_turn else set()
     storage_chat = get_storage_chat(chat_id)
 
-    # Tüm file_id'leri paralel al
+    # Kartları paralel al
     tasks = [get_card_file_id(context.bot, card_code, storage_chat) for card_code in hand]
     file_ids = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -315,7 +315,6 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
         if my_turn and card_code in legal:
-            # Oynanabilir → belirgin (en üste)
             playable_results.append(
                 InlineQueryResultCachedPhoto(
                     id=f"{card_code}#{idx}",
@@ -325,20 +324,20 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             )
         else:
-            # Oynanamayan → soluk hissi veren metin
             unplayable_results.append(
                 InlineQueryResultCachedPhoto(
                     id=f"{card_code}#{idx}",
                     photo_file_id=file_id,
                     title=f"🚫 {card_display_label(card_code)}",
-                    description="Şu an geçersiz (renk/sayı uymuyor)" if my_turn else "Sadece görüntüleme",
+                    description="Şu an geçersiz" if my_turn else "Sadece görüntüleme",
                 )
             )
 
     results = playable_results + unplayable_results
 
-    # Sıra sende ise Kart Çek + Pas her zaman en sonda
+    # Sıra sende ise Kart Çek + Pas her zaman ekle
     if my_turn:
+        # Kart Çek - fotoğraf olmazsa bile Article olarak ekle (asla kaybolmaz)
         try:
             deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, storage_chat)
             results.append(
@@ -350,8 +349,16 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             )
         except Exception:
-            pass
+            results.append(
+                InlineQueryResultArticle(
+                    id="draw",
+                    title="🂠 Kart Çek",
+                    input_message_content=InputTextMessageContent("🂠 Kart çekiyorum"),
+                    description="Desteden 1 kart çek",
+                )
+            )
 
+        # Pas
         results.append(
             InlineQueryResultArticle(
                 id="pass",
@@ -380,14 +387,13 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
         res = draw_card(chat_id, user.id)
         if not res["ok"]:
             return
-        n = len(res["drawn"])
+        n = len(res.get("drawn", []))
         await context.bot.send_message(
             chat_id,
             f"🂠 {actor_mention} kart çekti ({n} kart)."
             if n else f"🂠 {actor_mention} çekmek istedi ama deste boş.",
             parse_mode="HTML",
         )
-        # Sıra geçmez, oyuncu oynayabilir veya pas geçebilir
         return
 
     # Pas Geç
@@ -524,8 +530,7 @@ async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /profil - Profilini gösterir
 
 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin.
-Sıra sende olduğunda aynı buton oynanabilir kartları listeler,
-seçtiğin otomatik oynanır.
+Sıra sende olduğunda aynı buton oynanabilir kartları, Kart Çek ve Pas seçeneklerini listeler.
 """
     )
 
