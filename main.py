@@ -575,4 +575,13 @@ def main():
     app.add_handler(CommandHandler("profil", profil))
     app.add_handler(CommandHandler("cek", cek))
     app.add_handler(CommandHandler("pas", pas))
-    app.add_han
+    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(InlineQueryHandler(inline_hand))
+    app.add_handler(ChosenInlineResultHandler(chosen_result))
+
+    print("✅ Meyus UNO çalışıyor...")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
