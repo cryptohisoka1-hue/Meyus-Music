@@ -1,4 +1,4 @@
-config_content = '''# Telegram Bot Token'ınızı buraya yazın
+'''# Telegram Bot Token'ınızı buraya yazın
 # @BotFather'dan alabilirsiniz
 BOT_TOKEN = "8832238568:AAH2f7d9UF2rxbRWjcXgnQcChzSvD8C1eKE"
 
