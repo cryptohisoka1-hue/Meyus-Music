@@ -7,6 +7,7 @@ from cards_data import (
 )
 from card_cache import get_card_file_id, prewarm_all_cards
 from telegram import InlineQueryResultCachedPhoto
+from telegram import InlineQueryResultArticle, InputTextMessageContent
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext
 
