@@ -9,4 +9,66 @@ Kart kodu formati:
     "wild_renk"        -> joker (renk sec)
     "wild_artidort"    -> joker +4
 
-Gorseller assets/cards/
+Gorseller assets/cards/<kod>.png olarak durur. Bu dosyalari kendi
+GitHub reponda barindirip (veya baska bir statik host'a yukleyip)
+CARD_IMAGE_BASE_URL degiskenini raw URL koku ile guncelle.
+
+Ornek (GitHub raw):
+    CARD_IMAGE_BASE_URL = "https://raw.githubusercontent.com/<kullanici>/<repo>/main/assets/cards"
+"""
+
+from config import CARD_IMAGE_BASE_URL
+from game import COLORS, SYMBOLS
+
+ALL_CARD_CODES = []
+for _color in COLORS:
+    for _n in range(10):
+        ALL_CARD_CODES.append(f"{_color}_{_n}")
+    for _s in SYMBOLS:
+        ALL_CARD_CODES.append(f"{_color}_{_s}")
+ALL_CARD_CODES.extend(["wild_renk", "wild_artidort", "deste"])
+
+COLOR_LABELS = {
+    "kirmizi": "🔴",
+    "yesil": "🟢",
+    "mavi": "🔵",
+    "sari": "🟡",
+}
+
+SYMBOL_LABELS = {
+    "artiiki": "+2",
+    "durdur": "DUR",
+    "yonvedegis": "YÖN",
+}
+
+WILD_LABELS = {
+    "renk": "JOKER",
+    "artidort": "JOKER +4",
+}
+
+DECK_BACK_CODE = "deste"
+
+COLOR_NAME_TR = {
+    "kirmizi": "Kırmızı",
+    "yesil": "Yeşil",
+    "mavi": "Mavi",
+    "sari": "Sarı",
+}
+
+
+def card_image_url(card_code: str) -> str:
+    """Kart kodundan gorselin (raw) URL'ini uretir."""
+    return f"{CARD_IMAGE_BASE_URL.rstrip('/')}/{card_code}.png"
+
+
+def card_display_label(card_code: str) -> str:
+    """Metin gerektigi yerlerde (fallback) kisa etiket uretir. Rakam ayri gosterilmez, sadece renk+tur."""
+    if card_code.startswith("wild_"):
+        _, symbol = card_code.split("_", 1)
+        return f"⚫ {WILD_LABELS.get(symbol, symbol)}"
+
+    color, value = card_code.split("_", 1)
+    color_emoji = COLOR_LABELS.get(color, "❔")
+    if value in SYMBOL_LABELS:
+        return f"{color_emoji} {SYMBOL_LABELS[value]}"
+    return f"{color_emoji} Kart"
