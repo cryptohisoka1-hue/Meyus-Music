@@ -1,30 +1,69 @@
-# Kart kodu -> sticker paketindeki index (0'dan baslar) eslesmesi.
-#
-# NOT: Bu eslesme, paketteki sticker emoji'leri hepsi ayni (bos/placeholder)
-# oldugu icin GORSEL OLARAK DOGRULANAMADI. Standart bir UNO destesinin
-# tipik dizilisine (renk sirasiyla 0,1..9,+2,DUR,YON, sonra jokerler)
-# gore VARSAYIMLA olusturuldu. Oyunda test ederken bir kartin gorunen
-# sticker'i ile gercek kart kodu uyusmuyorsa, asagidaki sozlukteki ilgili
-# index'i duzeltmemiz gerekecek - bana hangi kartin yanlis goruntu ile
-# ciktigini soyle (or. "kirmizi_7 oynadim ama sari 3 gorundu").
+# classic_colorblind sticker seti (54 sticker)
+# Emoji hepsi 🃏 olduğu için klasik UNO sıralamasına göre eşleştirildi.
+# Sıra: Kırmızı(0-12) → Yeşil(13-25) → Mavi(26-38) → Sarı(39-51) → Joker(52-53)
 
-COLORS = ["kirmizi", "yesil", "mavi", "sari"]
+CARD_TO_STICKER_INDEX = {
+    # Kırmızı (0-12)
+    "kirmizi_0":   0,
+    "kirmizi_1":   1,
+    "kirmizi_2":   2,
+    "kirmizi_3":   3,
+    "kirmizi_4":   4,
+    "kirmizi_5":   5,
+    "kirmizi_6":   6,
+    "kirmizi_7":   7,
+    "kirmizi_8":   8,
+    "kirmizi_9":   9,
+    "kirmizi_arti2": 10,
+    "kirmizi_dur":   11,
+    "kirmizi_yon":   12,
 
-CARD_TO_STICKER_INDEX = {}
+    # Yeşil (13-25)
+    "yesil_0":   13,
+    "yesil_1":   14,
+    "yesil_2":   15,
+    "yesil_3":   16,
+    "yesil_4":   17,
+    "yesil_5":   18,
+    "yesil_6":   19,
+    "yesil_7":   20,
+    "yesil_8":   21,
+    "yesil_9":   22,
+    "yesil_arti2": 23,
+    "yesil_dur":   24,
+    "yesil_yon":   25,
 
-idx = 0
-for color in COLORS:
-    CARD_TO_STICKER_INDEX[f"{color}_0"] = idx
-    idx += 1
-    for n in range(1, 10):
-        CARD_TO_STICKER_INDEX[f"{color}_{n}"] = idx
-        idx += 1
-    for symbol in ["artiiki", "durdur", "yonvedegis"]:
-        CARD_TO_STICKER_INDEX[f"{color}_{symbol}"] = idx
-        idx += 1
+    # Mavi (26-38)
+    "mavi_0":   26,
+    "mavi_1":   27,
+    "mavi_2":   28,
+    "mavi_3":   29,
+    "mavi_4":   30,
+    "mavi_5":   31,
+    "mavi_6":   32,
+    "mavi_7":   33,
+    "mavi_8":   34,
+    "mavi_9":   35,
+    "mavi_arti2": 36,
+    "mavi_dur":   37,
+    "mavi_yon":   38,
 
-CARD_TO_STICKER_INDEX["wild_renk"] = idx
-idx += 1
-CARD_TO_STICKER_INDEX["wild_artidort"] = idx
-idx += 1
-      
+    # Sarı (39-51)
+    "sari_0":   39,
+    "sari_1":   40,
+    "sari_2":   41,
+    "sari_3":   42,
+    "sari_4":   43,
+    "sari_5":   44,
+    "sari_6":   45,
+    "sari_7":   46,
+    "sari_8":   47,
+    "sari_9":   48,
+    "sari_arti2": 49,
+    "sari_dur":   50,
+    "sari_yon":   51,
+
+    # Jokerler (52-53)
+    "wild_renk":     52,
+    "wild_artidort": 53,
+}
