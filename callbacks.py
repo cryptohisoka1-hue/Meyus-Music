@@ -10,6 +10,8 @@ def render_hand(game: UnoGame, player):
     hand = game.hands[player]
     cards = ", ".join(game.card_text(c) for c in hand)
     top = game.card_text(game.discard[-1])
-    f"Değer: {data['key']}"
-Üst kart: {top}
-Elin: {cards}"
+    return (
+        f"Üst kart: {top}
+"
+        f"Elin: {cards}"
+    )
