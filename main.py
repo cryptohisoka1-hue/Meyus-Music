@@ -358,7 +358,8 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for idx, card_code in enumerate(hand):
         try:
             file_id = await get_card_file_id(context.bot, card_code, chat_id)
-        except Exception:
+        except Exception as e:
+            print(f"⚠️ Kart görseli yüklenemedi ({card_code}): {e}")
             continue
 
         if my_turn and card_code in legal:
@@ -390,8 +391,8 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
                 )
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"⚠️ Deste görseli yüklenemedi: {e}")
 
         # Sadece kart çektikten sonra pas geçilebilir
         if has_drawn:
