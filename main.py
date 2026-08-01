@@ -24,7 +24,7 @@ from telegram.ext import (
     ContextTypes,
 )
 from telegram.error import ChatMigrated
-from config import BOT_TOKEN, CACHE_CHAT_ID
+from config import BOT_TOKEN, STORAGE_CHAT_ID
 from database import db
 
 
@@ -138,12 +138,14 @@ async def _do_start_game(context, chat_id):
 
     # Tum kart gorsellerini arka planda onceden cache'le (bir sonraki
     # @bot sorgusu bekletmeden aninda calissin diye). Onbellekleme icin
-    # oyun grubu DEGIL, gizli depo sohbeti (CACHE_CHAT_ID) kullanilir ki
-    # oyunculara kartlar bot tarafindan "kendiliginden" gonderiliyormus
-    # gibi gorunmesin.
-    asyncio.create_task(prewarm_all_cards(context.bot, CACHE_CHAT_ID, ALL_CARD_CODES))
+    # oyun grubu DEGIL, mumkunse gizli depo sohbeti (STORAGE_CHAT_ID)
+    # kullanilir ki oyunculara kartlar bot tarafindan "kendiliginden"
+    # gonderiliyormus gibi gorunmesin. STORAGE_CHAT_ID ayarli degilse
+    # (onerilmez) oyunun kendi grubuna duser.
+    cache_chat_id = STORAGE_CHAT_ID or chat_id
+    asyncio.create_task(prewarm_all_cards(context.bot, cache_chat_id, ALL_CARD_CODES))
 
-    file_id = await get_card_file_id(context.bot, t_card, CACHE_CHAT_ID)
+    file_id = await get_card_file_id(context.bot, t_card, cache_chat_id)
     await context.bot.send_photo(
         chat_id,
         photo=file_id,
@@ -356,11 +358,12 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     my_turn = current_player(chat_id) == user.id
     hand = game["hands"].get(user.id, [])
     legal = set(legal_cards_for(chat_id, user.id)) if my_turn else set()
+    cache_chat_id = STORAGE_CHAT_ID or chat_id
 
     results = []
     for idx, card_code in enumerate(hand):
         try:
-            file_id = await get_card_file_id(context.bot, card_code, CACHE_CHAT_ID)
+            file_id = await get_card_file_id(context.bot, card_code, cache_chat_id)
         except Exception as e:
             print(f"⚠️ Kart görseli yüklenemedi ({card_code}): {e}")
             continue
@@ -385,7 +388,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
         has_drawn = game.get("has_drawn", {}).get(user.id, False)
 
         try:
-            deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, CACHE_CHAT_ID)
+            deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, cache_chat_id)
             results.append(
                 InlineQueryResultCachedPhoto(
                     id="draw",
@@ -534,35 +537,7 @@ async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    was_started = game.get("started", False)
-    end_game(chat_id)
-    lobby_messages.pop(chat_id, None)
-
-    if was_started:
-        await update.message.reply_text(
-            f"🛑 Oyun {user.first_name} tarafından sonlandırıldı.\n\n"
-            f"Yeni oyun için /oyun yazabilirsiniz."
-        )
-    else:
-        await update.message.reply_text(
-            f"🛑 Lobi {user.first_name} tarafından kapatıldı.\n\n"
-            f"Yeni oyun için /oyun yazabilirsiniz."
-        )
-
-
-# /profil
-async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = db.get_user(update.effective_user.id)
-    if not user:
-        await update.message.reply_text("Önce /start kullan.")
-        return
-
-    await update.message.reply_text(
-        f"""👤 Profil 🪙 Coin: {user[3]} 🏆 Galibiyet: {user[4]} 🎮 Oyun: {user[5]} ⭐ Seviye: {user[6]} ✨ XP: {user[7]} """
-    )
-
-
-async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    was_started = game.get("started", False)async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         """ 🎮 Yardım /start - Botu başlatır /oyun - Yeni oyun oluşturur /katil - Oyuna katılır /baslat - Oyunu başlatır /bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler) /profil - Profilini gösterir /cek - Sıra sendeyken kart çeker /pas - Kart çektikten sonra sırayı geçer Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin. Sıra sende olduğunda aynı buton oynanabilir kartları, kart çekme ve pas geçme seçeneklerini listeler, seçtiğin otomatik uygulanır. """
     )
