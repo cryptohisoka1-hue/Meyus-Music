@@ -372,8 +372,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 title=f"🎴 {card_display_label(card_code)}",
                 description=desc,
             )
-        )
-
+        
         if my_turn:
         # Mevcut kart çekme seçeneği (değişmiyor)
         try:
