@@ -1,46 +1,111 @@
 import sqlite3
-import json
-from config import DATABASE_NAME
+import sys
+from pathlib import Path
+
+DB_FOLDER = Path(__file__).resolve().parent / "data"
+
+try:
+    DB_FOLDER.mkdir(exist_ok=True)
+except Exception as e:
+    print(f"[database.py] 'data' klasoru olusturulamadi: {e}", file=sys.stderr)
+    raise
+
+DB_PATH = DB_FOLDER / "uno.db"
 
 
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect(DATABASE_NAME, check_same_thread=False)
-        self._init_tables()
+        self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        self.cursor = self.conn.cursor()
+        self.create_tables()
 
-    def _init_tables(self):
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS games (
-                game_id TEXT PRIMARY KEY,
-                state TEXT
+    def create_tables(self):
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users(
+                user_id INTEGER PRIMARY KEY,
+                first_name TEXT,
+                username TEXT,
+                coins INTEGER DEFAULT 100,
+                wins INTEGER DEFAULT 0,
+                games INTEGER DEFAULT 0,
+                level INTEGER DEFAULT 1,
+                xp INTEGER DEFAULT 0
             )
         """)
         self.conn.commit()
 
-    def save_state(self, game_id, state):
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "REPLACE INTO games (game_id, state) VALUES (?, ?)",
-            (str(game_id), json.dumps(state))
-        )
+    # ---------------- USER ----------------
+    def add_user(self, user_id, first_name, username):
+        self.cursor.execute("""
+            INSERT OR IGNORE INTO users
+            (user_id, first_name, username)
+            VALUES (?, ?, ?)
+        """, (user_id, first_name, username))
         self.conn.commit()
 
-    def load_state(self, game_id):
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT state FROM games WHERE game_id = ?",
-            (str(game_id),)
-        )
-        row = cursor.fetchone()
-        if row:
-            return json.loads(row[0])
-        return None
+    def get_user(self, user_id):
+        self.cursor.execute("""
+            SELECT * FROM users
+            WHERE user_id=?
+        """, (user_id,))
+        return self.cursor.fetchone()
 
-    def delete_state(self, game_id):
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "DELETE FROM games WHERE game_id = ?",
-            (str(game_id),)
-        )
+    # ---------------- COIN ----------------
+    def add_coin(self, user_id, amount):
+        self.cursor.execute("""
+            UPDATE users
+            SET coins = coins + ?
+            WHERE user_id=?
+        """, (amount, user_id))
         self.conn.commit()
+
+    def remove_coin(self, user_id, amount):
+        self.cursor.execute("""
+            UPDATE users
+            SET coins = coins - ?
+            WHERE user_id=?
+        """, (amount, user_id))
+        self.conn.commit()
+
+    # ---------------- XP ----------------
+    def add_xp(self, user_id, amount):
+        self.cursor.execute("""
+            UPDATE users
+            SET xp = xp + ?
+            WHERE user_id=?
+        """, (amount, user_id))
+        self.conn.commit()
+
+    # ---------------- GAME ----------------
+    def add_game(self, user_id):
+        self.cursor.execute("""
+            UPDATE users
+            SET games = games + 1
+            WHERE user_id=?
+        """, (user_id,))
+        self.conn.commit()
+
+    def add_win(self, user_id):
+        self.cursor.execute("""
+            UPDATE users
+            SET wins = wins + 1
+            WHERE user_id=?
+        """, (user_id,))
+        self.conn.commit()
+
+    # ---------------- LEADERBOARD ----------------
+    def leaderboard(self):
+        self.cursor.execute("""
+            SELECT first_name, wins
+            FROM users
+            ORDER BY wins DESC
+            LIMIT 10
+        """)
+        return self.cursor.fetchall()
+
+
+try:
+    db = Database()
+except Exception as e:
+    print(f"[database.py] Database() baslatilamadi: {e}", file=sys.stderr)
+    raise
