@@ -570,6 +570,8 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(InlineQueryHandler(inline_hand))
     app.add_handler(ChosenInlineResultHandler(chosen_result))
+    # app.add_handler(CommandHandler("kartlar", gonder_kartlar))
+# app.add_handler(CallbackQueryHandler(pas_butonu_tiklandi, pattern="^pas_eylemi$"))
 
     print("✅ Meyus UNO çalışıyor...")
     app.run_polling()
