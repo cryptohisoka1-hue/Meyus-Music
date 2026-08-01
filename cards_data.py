@@ -1,5 +1,6 @@
 import os
 import random
+from card_sticker_map import CARD_TO_STICKER_INDEX  # <-- EKLENDİ
 
 # Kart görselleri için temel URL
 # GitHub Raw veya kendi CDN'inizi kullanın
