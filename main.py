@@ -123,7 +123,7 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 🃏 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini
 görebilirsin (sıra sende değilse sadece görüntülemek için).
 Sıra sende olduğunda aynı buton oynanabilir kartlarını, kart
-çekme ve pas seçeneklerini listeler.
+çekme ve (çektiysen) pas seçeneklerini listeler.
 
 İyi eğlenceler ❤️
 """
@@ -335,9 +335,9 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     results = playable_results + unplayable_results
 
-    # Sıra sende ise Kart Çek + Pas her zaman ekle
+    # Sıra sende ise
     if my_turn:
-        # Kart Çek - fotoğraf olmazsa bile Article olarak ekle (asla kaybolmaz)
+        # Kart Çek (her zaman)
         try:
             deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, storage_chat)
             results.append(
@@ -358,15 +358,17 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             )
 
-        # Pas
-        results.append(
-            InlineQueryResultArticle(
-                id="pass",
-                title="⏭ Pas Geç",
-                input_message_content=InputTextMessageContent("⏭ Pas geçiyorum"),
-                description="Sıranı pas geç",
+        # Pas → SADECE kart çektikten sonra
+        has_drawn = game.get("has_drawn", {}).get(user.id, False)
+        if has_drawn:
+            results.append(
+                InlineQueryResultArticle(
+                    id="pass",
+                    title="⏭ Pas Geç",
+                    input_message_content=InputTextMessageContent("⏭ Pas geçiyorum"),
+                    description="Kart çektin, oynamak istemiyorsan pas geç",
+                )
             )
-        )
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
@@ -378,6 +380,10 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id, game = find_active_game_for_user(user.id)
     if not game:
+        return
+
+    # Çift hamle koruması
+    if current_player(chat_id) != user.id:
         return
 
     actor_mention = mention_html(user.id, player_name(game, user.id))
@@ -394,6 +400,9 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if n else f"🂠 {actor_mention} çekmek istedi ama deste boş.",
             parse_mode="HTML",
         )
+        # Kart çektikten sonra da bildirim gitsin
+        if not game.get("winner"):
+            await announce_turn(context, chat_id)
         return
 
     # Pas Geç
@@ -428,6 +437,14 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
         return
+
+    # UNO duyurusu (1 kart kaldıysa)
+    if res.get("uno"):
+        await context.bot.send_message(
+            chat_id,
+            f"🎤 {actor_mention} <b>UNO!</b>",
+            parse_mode="HTML",
+        )
 
     if res["win"]:
         await finish_game(context, chat_id, user.id)
@@ -530,7 +547,7 @@ async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /profil - Profilini gösterir
 
 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin.
-Sıra sende olduğunda aynı buton oynanabilir kartları, Kart Çek ve Pas seçeneklerini listeler.
+Sıra sende olduğunda aynı buton oynanabilir kartları, Kart Çek ve (çektiysen) Pas seçeneklerini listeler.
 """
     )
 
