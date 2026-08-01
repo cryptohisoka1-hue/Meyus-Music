@@ -297,7 +297,7 @@ async def baslat(update, context):
     await _do_start_game(context, chat_id)
 
 
-# Inline query: sira kimdeyse SADECE ona ozel oynanabilir kartlari + kart cekme + pas secenegini gosterir
+# Inline query
 async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
     user = inline_query.from_user
@@ -316,7 +316,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     legal = set(legal_cards_for(chat_id, user.id)) if my_turn else set()
     storage_chat = get_storage_chat(chat_id)
 
-    # Kart file_id'lerini paralel al (performans)
+    # Kart file_id'lerini paralel al
     tasks = [
         get_card_file_id(context.bot, card_code, storage_chat)
         for card_code in hand
@@ -344,7 +344,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
 
-    # Çek ve Pas seçenekleri (sadece sıra sende ise)
+    # Sıra sende ise Kart Çek + Pas her zaman görünsün
     if my_turn:
         # Kart Çek
         try:
@@ -354,23 +354,21 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     id="draw",
                     photo_file_id=deck_file_id,
                     title="🂠 Kart Çek",
-                    description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
+                    description="Kart çek",
                 )
             )
         except Exception:
             pass
 
-        # Pas Geç (sadece kart çektikten sonra)
-        has_drawn = game.get("has_drawn", {}).get(user.id, False)
-        if has_drawn:
-            results.append(
-                InlineQueryResultArticle(
-                    id="pass",
-                    title="⏭ Pas Geç",
-                    input_message_content=InputTextMessageContent("⏭ Pas geçiyorum"),
-                    description="Kart çektin, oynamak istemiyorsan pas geç",
-                )
+        # Pas Geç (her zaman)
+        results.append(
+            InlineQueryResultArticle(
+                id="pass",
+                title="⏭ Pas Geç",
+                input_message_content=InputTextMessageContent("⏭ Pas geçiyorum"),
+                description="Sıranı pas geç",
             )
+        )
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
@@ -402,28 +400,16 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await announce_turn(context, chat_id)
         return
 
-    # Pas Geç
+    # Pas Geç (her zaman izinli)
     if result_id == "pass":
-        # has_drawn kontrolü (güvenlik)
-        has_drawn = game.get("has_drawn", {}).get(user.id, False)
-        if not has_drawn:
-            return
-
-        # Sırayı bir sonraki oyuncuya geçir
-        # (game.py içinde next_turn / pass_turn fonksiyonun varsa onu kullan)
-        if "has_drawn" in game and user.id in game["has_drawn"]:
-            game["has_drawn"][user.id] = False
-
-        # Basit sıra ilerletme (kendi game mantığına göre ayarla)
-        # next_player(chat_id) veya advance_turn(chat_id) gibi bir fonksiyonun varsa çağır
-        # Aşağıdaki satır örnek — kendi game.py'ne göre düzenle:
-        # advance_turn(chat_id)
-
         await context.bot.send_message(
             chat_id,
             f"⏭ {actor_mention} pas geçti.",
             parse_mode="HTML",
         )
+        # Sırayı ilerlet (game.py'deki fonksiyonuna göre düzenle)
+        # Örnek:
+        # advance_turn(chat_id)  veya  next_turn(chat_id)
         if not game.get("winner"):
             await announce_turn(context, chat_id)
         return
