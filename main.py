@@ -23,6 +23,7 @@ from telegram.ext import (
     ChosenInlineResultHandler,
     ContextTypes,
 )
+from telegram.error import ChatMigrated
 from config import BOT_TOKEN
 from database import db
 
@@ -563,8 +564,44 @@ async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def _migrate_chat(old_chat_id, new_chat_id):
+    """Grup süper gruba yükseltilince oyun/lobi verisini yeni chat_id'ye taşır."""
+    if old_chat_id in games:
+        game = games.pop(old_chat_id)
+        games[new_chat_id] = game
+        for uid in game.get("hands", {}).keys():
+            if user_active_chat.get(uid) == old_chat_id:
+                user_active_chat[uid] = new_chat_id
+    if old_chat_id in lobby_messages:
+        lobby_messages[new_chat_id] = lobby_messages.pop(old_chat_id)
+
+
+async def error_handler(update, context: ContextTypes.DEFAULT_TYPE):
+    err = context.error
+
+    if isinstance(err, ChatMigrated):
+        old_chat_id = None
+        if update and getattr(update, "effective_chat", None):
+            old_chat_id = update.effective_chat.id
+        new_chat_id = err.new_chat_id
+        if old_chat_id is not None:
+            _migrate_chat(old_chat_id, new_chat_id)
+            try:
+                await context.bot.send_message(
+                    new_chat_id,
+                    "ℹ️ Bu grup süper gruba yükseltildi, oyun verisi yeni gruba taşındı. "
+                    "Devam etmek için tekrar 🎴 Kartlarımı Gör / Oyna butonuna dokunabilirsiniz.",
+                )
+            except Exception:
+                pass
+        return
+
+    print(f"⚠️ Beklenmeyen hata: {err}")
+
+
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
+    app.add_error_handler(error_handler)
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("yardim", yardim))
