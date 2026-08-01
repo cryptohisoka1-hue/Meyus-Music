@@ -1,42 +1,75 @@
-from telegram import Update
-from telegram.ext import ContextTypes
-import json
-from database import get_player_hand, add_player, save_game
-from game import is_valid_move, get_card_display
+'''from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from game import get_card_display
 
-async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    game_id = str(chat_id)
+
+def make_card_keyboard(hand, chat_id):
+    """Oyuncunun elindeki kartlar için inline keyboard oluşturur.
     
-    # Oyunu başlat
-    deck = create_deck()
-    discard = [deck.pop()]
-    players = {}
+    Format: Her satırda 4-5 kart butonu
+    En altta: [🃏 Çek] [❓]
+    Callback: play:<chat_id>:<index>  veya  draw:<chat_id>
+    """
+    buttons = []
+    for i, card in enumerate(hand):
+        text = get_card_display(card)
+        # Buton metni çok uzun olmasın
+        buttons.append(InlineKeyboardButton(text, callback_data=f"play:{chat_id}:{i}"))
     
-    # Herkes için kart dağıt (örnek: 7 kart)
-    for member in await context.bot.get_chat_member(chat_id, update.effective_user.id):
-        pass # Basitlik için tek oyunculu simülasyon
+    # Her satırda 4 kart
+    keyboard = [buttons[i:i+4] for i in range(0, len(buttons), 4)]
     
-    player_hand = [deck.pop() for _ in range(7)]
-    await add_player(update.effective_user.id, game_id, player_hand)
+    # Alt satır: Çek ve ? butonları
+    keyboard.append([
+        InlineKeyboardButton("🃏 Çek", callback_data=f"draw:{chat_id}"),
+        InlineKeyboardButton("❓", callback_data=f"help:{chat_id}")
+    ])
     
-    game_data = {
-        'deck': json.dumps([c for c in deck]),
-        'discard': json.dumps(discard),
-        'turn': 0,
-        'direction': 1,
-        'players': {update.effective_user.id: player_hand}
+    return InlineKeyboardMarkup(keyboard)
+
+
+def make_color_keyboard(chat_id):
+    """Wild kart atıldığında renk seçim butonları."""
+    keyboard = [
+        [InlineKeyboardButton("🔴 Kırmızı", callback_data=f"color:{chat_id}:red"),
+         InlineKeyboardButton("🔵 Mavi", callback_data=f"color:{chat_id}:blue")],
+        [InlineKeyboardButton("🟢 Yeşil", callback_data=f"color:{chat_id}:green"),
+         InlineKeyboardButton("🟡 Sarı", callback_data=f"color:{chat_id}:yellow")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def game_status_text(game):
+    """Oyun durumunu metin olarak döndürür (grup mesajı için)."""
+    top_card = game.discard[-1] if game.discard else None
+    top_text = get_card_display(top_card) if top_card else "Yok"
+    
+    current = game.current_player()
+    
+    color_map = {
+        'red': 'Kırmızı',
+        'blue': 'Mavi', 
+        'green': 'Yeşil',
+        'yellow': 'Sarı'
     }
-    await save_game(game_id, game_data)
     
-    await update.message.reply_text(f"Oyun başladı! Sıra sizde.\n\n{get_card_display(discard)} üstte yatıyor.")
+    color_text = "Yok"
+    if top_card:
+        if top_card['color'] == 'wild':
+            color_text = color_map.get(game.chosen_color, "Bilinmiyor")
+        else:
+            color_text = color_map.get(top_card['color'], top_card['color'].capitalize())
+    
+    return f"Üst:{top_text} Renk:{color_text} Sıra:{current}"
 
-async def play_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    if "play_" in query.data:
-        # Kart oynama mantığı burada devreye girer
-        await query.edit_message_text("Kartınız kontrol ediliyor...")
-        # Gerçek uygulamada kartı seçip oyun mantığını tetiklersiniz
-        
+
+def hand_text(hand):
+    """Eli numaralı liste olarak döndürür."""
+    parts = []
+    for i, card in enumerate(hand, 1):
+        parts.append(f"{i}:{get_card_display(card)}")
+    return " ".join(parts)
+'''
+
+with open('/mnt/agents/output/callbacks.py', 'w', encoding='utf-8') as f:
+    f.write(callbacks_content)
+print("✅ callbacks.py")
