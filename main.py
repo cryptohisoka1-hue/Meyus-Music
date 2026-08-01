@@ -14,6 +14,7 @@ from telegram import (
     InlineQueryResultCachedPhoto,
     InlineQueryResultArticle,
     InputTextMessageContent,
+    BotCommand,
 )
 from telegram.ext import (
     Application,
@@ -80,19 +81,28 @@ async def announce_effect(context, chat_id, actor_mention, effect, next_mention=
 
 
 async def finish_game(context, chat_id, winner_uid):
-    game = games[chat_id]
+    game = games.get(chat_id)
+    if not game:
+        return
+
     winner_mention = mention_html(winner_uid, player_name(game, winner_uid))
 
     db.add_win(winner_uid)
-    for p in game["players"]:
-        db.add_game(p["id"])
     db.add_coin(winner_uid, 50)
     db.add_xp(winner_uid, 30)
+
+    for p in game["players"]:
+        db.add_game(p["id"])
+
+    user = db.get_user(winner_uid)
+    level = user[6] if user else 1
+    xp = user[7] if user else 0
 
     await context.bot.send_message(
         chat_id,
         f"🏆 {winner_mention} oyunu kazandı! 🎉\n\n"
-        f"+50 coin, +30 XP kazandın.\n\n"
+        f"+50 coin, +30 XP kazandın.\n"
+        f"⭐ Seviye: {level} | ✨ XP: {xp}\n\n"
         f"Yeni oyun için /oyun yazabilirsiniz.",
         parse_mode="HTML",
     )
@@ -112,18 +122,15 @@ Meyus UNO'ya hoş geldin.
 Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 
 📌 Komutlar
-/start - Botu başlat
-/yardim - Yardım
 /oyun - Yeni oyun oluştur
 /katil - Oyuna katıl
 /baslat - Oyunu başlat
 /bitir - Oyunu/lobiyi sonlandır
 /profil - Profilin
+/yardim - Yardım
 
-🃏 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini
-görebilirsin (sıra sende değilse sadece görüntülemek için).
-Sıra sende olduğunda aynı buton oynanabilir kartlarını, kart
-çekme ve (çektiysen) pas seçeneklerini listeler.
+🃏 "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin.
+Sıra sende olduğunda oynanabilir kartlar, Kart Çek ve (çektiysen) Pas seçenekleri çıkar.
 
 İyi eğlenceler ❤️
 """
@@ -303,7 +310,6 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     legal = set(legal_cards_for(chat_id, user.id)) if my_turn else set()
     storage_chat = get_storage_chat(chat_id)
 
-    # Kartları paralel al
     tasks = [get_card_file_id(context.bot, card_code, storage_chat) for card_code in hand]
     file_ids = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -335,9 +341,8 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     results = playable_results + unplayable_results
 
-    # Sıra sende ise
     if my_turn:
-        # Kart Çek (her zaman)
+        # Kart Çek
         try:
             deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, storage_chat)
             results.append(
@@ -358,7 +363,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             )
 
-        # Pas → SADECE kart çektikten sonra
+        # Pas (sadece kart çektikten sonra)
         has_drawn = game.get("has_drawn", {}).get(user.id, False)
         if has_drawn:
             results.append(
@@ -382,7 +387,6 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not game:
         return
 
-    # Çift hamle koruması
     if current_player(chat_id) != user.id:
         return
 
@@ -400,7 +404,6 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if n else f"🂠 {actor_mention} çekmek istedi ama deste boş.",
             parse_mode="HTML",
         )
-        # Kart çektikten sonra da bildirim gitsin
         if not game.get("winner"):
             await announce_turn(context, chat_id)
         return
@@ -438,7 +441,7 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # UNO duyurusu (1 kart kaldıysa)
+    # UNO
     if res.get("uno"):
         await context.bot.send_message(
             chat_id,
@@ -522,14 +525,14 @@ async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Önce /start kullan.")
         return
 
-    await update.message.reply_text(
-        f"""👤 Profil
+    await update.message.reply_html(
+        f"""👤 <b>Profil</b>
 
-🪙 Coin: {user[3]}
-🏆 Galibiyet: {user[4]}
-🎮 Oyun: {user[5]}
-⭐ Seviye: {user[6]}
-✨ XP: {user[7]}
+🪙 Coin: <b>{user[3]}</b>
+🏆 Galibiyet: <b>{user[4]}</b>
+🎮 Oyun: <b>{user[5]}</b>
+⭐ Seviye: <b>{user[6]}</b>
+✨ XP: <b>{user[7]}</b>
 """
     )
 
@@ -539,29 +542,40 @@ async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
 🎮 Yardım
 
-/start - Botu başlatır
 /oyun - Yeni oyun oluşturur
 /katil - Oyuna katılır
 /baslat - Oyunu başlatır
-/bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler)
+/bitir - Oyunu/lobiyi sonlandırır
 /profil - Profilini gösterir
+/yardim - Bu menüyü gösterir
 
-Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin.
-Sıra sende olduğunda aynı buton oynanabilir kartları, Kart Çek ve (çektiysen) Pas seçeneklerini listeler.
+Sıra sende olduğunda "🎴 Kartlarımı Gör / Oyna" butonuna bas.
+Oynanabilir kartlar, Kart Çek ve (kart çektiysen) Pas seçenekleri çıkar.
 """
     )
 
 
 async def _on_startup(application):
+    # Türkçe komut menüsü
+    commands = [
+        BotCommand("oyun", "Yeni oyun oluştur"),
+        BotCommand("katil", "Oyuna katıl"),
+        BotCommand("baslat", "Oyunu başlat"),
+        BotCommand("bitir", "Oyunu/lobiyi sonlandır"),
+        BotCommand("profil", "Profilini göster"),
+        BotCommand("yardim", "Yardım menüsü"),
+        BotCommand("start", "Botu başlat"),
+    ]
+    await application.bot.set_my_commands(commands)
+
     if not STORAGE_CHAT_ID:
         print(
             "⚠️  STORAGE_CHAT_ID ayarlanmamış — kartlar ihtiyaç anında oyunun "
-            "kendi grubunda cache'lenecek (küçük bir gizlilik/gorunurluk riski). "
-            "Ozel bir depo sohbeti ayarlamanı öneririm."
+            "kendi grubunda cache'lenecek."
         )
         return
 
-    print("⏳ Kartlar önceden yükleniyor (bir kereye mahsus)...")
+    print("⏳ Kartlar önceden yükleniyor...")
     await prewarm_all_cards(application.bot, STORAGE_CHAT_ID, ALL_CARD_CODES)
     print("✅ Tüm kartlar cache'lendi.")
 
