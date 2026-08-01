@@ -1,23 +1,23 @@
-import random
+'''import random
+import json
 
 COLORS = ['red', 'blue', 'green', 'yellow']
 VALUES = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'reverse', '+2']
-WILD_VALUES = ['wild', '+4']
+
 
 def create_deck():
-    deck = 
+    deck = []
     for color in COLORS:
         for value in VALUES:
             deck.append({'color': color, 'value': value})
             if value != '0':
                 deck.append({'color': color, 'value': value})
-    
     for _ in range(4):
         deck.append({'color': 'wild', 'value': 'wild'})
         deck.append({'color': 'wild', 'value': '+4'})
-    
     random.shuffle(deck)
     return deck
+
 
 def get_card_display(card):
     if card['color'] == 'wild':
@@ -25,12 +25,84 @@ def get_card_display(card):
     colors_map = {'red': '🔴', 'blue': '🔵', 'green': '🟢', 'yellow': '🟡'}
     return f"{colors_map[card['color']]} {card['value'].upper()}"
 
-def is_valid_move(card, top_card):
-    if card['color'] == 'wild' or top_card['color'] == 'wild':
+
+def is_valid_move(card, top_card, chosen_color=None):
+    if card['color'] == 'wild':
         return True
+    if top_card['color'] == 'wild' and chosen_color:
+        if card['color'] == chosen_color:
+            return True
     if card['color'] == top_card['color']:
         return True
     if card['value'] == top_card['value']:
         return True
     return False
-    
+
+
+class UnoGame:
+    def __init__(self):
+        self.players = []
+        self.deck = create_deck()
+        self.discard = []
+        self.hands = {}
+        self.turn = 0
+        self.direction = 1
+        self.chosen_color = None
+        self.started = False
+
+    def start(self):
+        self.discard = [self.deck.pop()]
+        while self.discard[-1]['color'] == 'wild':
+            self.deck.insert(0, self.discard.pop())
+            self.discard.append(self.deck.pop())
+        for player in self.players:
+            self.hands[player] = [self.deck.pop() for _ in range(7)]
+        self.started = True
+
+    def current_player(self):
+        if not self.players:
+            return None
+        return self.players[self.turn % len(self.players)]
+
+    def next_turn(self):
+        self.turn = (self.turn + self.direction) % len(self.players)
+        self.chosen_color = None
+
+    def can_play(self, card):
+        if not self.discard:
+            return True
+        top = self.discard[-1]
+        return is_valid_move(card, top, self.chosen_color)
+
+    def card_text(self, card):
+        return get_card_display(card)
+
+    def serialize(self):
+        return {
+            'players': self.players,
+            'deck': self.deck,
+            'discard': self.discard,
+            'hands': self.hands,
+            'turn': self.turn,
+            'direction': self.direction,
+            'chosen_color': self.chosen_color,
+            'started': self.started
+        }
+
+    @classmethod
+    def deserialize(cls, data):
+        game = cls()
+        game.players = data['players']
+        game.deck = data['deck']
+        game.discard = data['discard']
+        game.hands = data['hands']
+        game.turn = data['turn']
+        game.direction = data['direction']
+        game.chosen_color = data.get('chosen_color')
+        game.started = data.get('started', False)
+        return game
+'''
+
+with open('/mnt/agents/output/game.py', 'w', encoding='utf-8') as f:
+    f.write(game_content)
+print("✅ game.py")
