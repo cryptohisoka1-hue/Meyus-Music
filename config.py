@@ -26,3 +26,8 @@ CARD_IMAGE_BASE_URL = os.environ.get(
 STORAGE_CHAT_ID = os.environ.get("STORAGE_CHAT_ID")
 if STORAGE_CHAT_ID:
     STORAGE_CHAT_ID = int(STORAGE_CHAT_ID)
+
+# Kart gorselleri yerine hazir Telegram sticker paketi kullanmak icin.
+# https://t.me/addstickers/classic_colorblind gibi bir link paylasilmissa
+# set adi linkteki son parcadir ("classic_colorblind").
+STICKER_SET_NAME = os.environ.get("STICKER_SET_NAME", "classic_colorblind")
