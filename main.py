@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 
 from game import *
@@ -23,8 +22,19 @@ from telegram.ext import (
     ChosenInlineResultHandler,
     ContextTypes,
 )
-from config import BOT_TOKEN
+from config import BOT_TOKEN, STORAGE_CHAT_ID
 from database import db
+
+
+def get_storage_chat(chat_id):
+    """
+    Kart gorsellerini cache'lerken kullanilacak GIZLI sohbet.
+    STORAGE_CHAT_ID ayarlanmissa (onerilen) o kullanilir - hicbir kart
+    oyuncularin gordugu gruba dusmez. Ayarlanmamissa (onerilmez), eski
+    davranisa geri doner: oyunun kendi grubu kullanilir (kucuk bir
+    gizlilik/gorunurluk riski tasir).
+    """
+    return STORAGE_CHAT_ID if STORAGE_CHAT_ID else chat_id
 
 
 def player_name(game, uid):
@@ -158,11 +168,7 @@ async def _do_start_game(context, chat_id):
     t_card = top_card(chat_id)
     color_tr = COLOR_NAME_TR.get(game["top_color"], game["top_color"])
 
-    # Tum kart gorsellerini arka planda onceden cache'le (bir sonraki
-    # @bot sorgusu bekletmeden aninda calissin diye).
-    asyncio.create_task(prewarm_all_cards(context.bot, chat_id, ALL_CARD_CODES))
-
-    file_id = await get_card_file_id(context.bot, t_card, chat_id)
+    file_id = await get_card_file_id(context.bot, t_card, get_storage_chat(chat_id))
     await context.bot.send_photo(
         chat_id,
         photo=file_id,
@@ -307,11 +313,12 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     my_turn = current_player(chat_id) == user.id
     hand = game["hands"].get(user.id, [])
     legal = set(legal_cards_for(chat_id, user.id)) if my_turn else set()
+    storage_chat = get_storage_chat(chat_id)
 
     results = []
     for idx, card_code in enumerate(hand):
         try:
-            file_id = await get_card_file_id(context.bot, card_code, chat_id)
+            file_id = await get_card_file_id(context.bot, card_code, storage_chat)
         except Exception:
             continue
 
@@ -333,7 +340,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if my_turn:
         try:
-            deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, chat_id)
+            deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, storage_chat)
             results.append(
                 InlineQueryResultCachedPhoto(
                     id="draw",
@@ -501,8 +508,22 @@ seçtiğin otomatik oynanır.
     )
 
 
+async def _on_startup(application):
+    if not STORAGE_CHAT_ID:
+        print(
+            "⚠️  STORAGE_CHAT_ID ayarlanmamış — kartlar ihtiyaç anında oyunun "
+            "kendi grubunda cache'lenecek (küçük bir gizlilik/gorunurluk riski). "
+            "Ozel bir depo sohbeti ayarlamanı öneririm."
+        )
+        return
+
+    print("⏳ Kartlar önceden yükleniyor (bir kereye mahsus)...")
+    await prewarm_all_cards(application.bot, STORAGE_CHAT_ID, ALL_CARD_CODES)
+    print("✅ Tüm kartlar cache'lendi.")
+
+
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(_on_startup).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("yardim", yardim))
