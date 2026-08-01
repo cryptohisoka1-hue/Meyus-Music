@@ -612,8 +612,6 @@ async def error_handler(update, context: ContextTypes.DEFAULT_TYPE):
     print(f"⚠️ Beklenmeyen hata: {err}")
 
 
-import os
-
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -630,21 +628,8 @@ def main():
     app.add_handler(InlineQueryHandler(inline_hand))
     app.add_handler(ChosenInlineResultHandler(chosen_result))
     app.add_error_handler(error_handler)
-    
-    # Railway'de webhook modu (tek instance garantisi)
-    PORT = int(os.environ.get("PORT", 8080))
-    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # Railway'de ayarla
-    
-    if WEBHOOK_URL:
-        print("✅ Meyus UNO webhook modunda başlatıldı!")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            webhook_url=WEBHOOK_URL,
-        )
-    else:
-        print("✅ Meyus UNO polling modunda başlatıldı!")
-        app.run_polling()
+    print("✅ Meyus UNO başlatıldı!")
+    app.run_polling()
 
 
 if __name__ == "__main__":
