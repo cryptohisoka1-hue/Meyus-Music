@@ -28,13 +28,6 @@ from database import db
 
 
 def get_storage_chat(chat_id):
-    """
-    Kart gorsellerini cache'lerken kullanilacak GIZLI sohbet.
-    STORAGE_CHAT_ID ayarlanmissa (onerilen) o kullanilir - hicbir kart
-    oyuncularin gordugu gruba dusmez. Ayarlanmamissa (onerilmez), eski
-    davranisa geri doner: oyunun kendi grubu kullanilir (kucuk bir
-    gizlilik/gorunurluk riski tasir).
-    """
     return STORAGE_CHAT_ID if STORAGE_CHAT_ID else chat_id
 
 
@@ -46,7 +39,6 @@ def player_name(game, uid):
 
 
 def mention_html(uid, name):
-    """Kullanici adi olmasa bile calisan, tiklanabilir/bildirim tetikleyen etiket."""
     safe_name = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return f'<a href="tg://user?id={uid}">{safe_name}</a>'
 
@@ -107,7 +99,6 @@ async def finish_game(context, chat_id, winner_uid):
     end_game(chat_id)
 
 
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     db.add_user(user.id, user.first_name, user.username)
@@ -139,7 +130,6 @@ Sıra sende olduğunda aynı buton oynanabilir kartlarını ve kart
     await update.message.reply_html(text)
 
 
-# /oyun
 async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -261,7 +251,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
 
-# /katil
 async def katil(update, context):
     result = join_game(
         update.effective_chat.id,
@@ -283,7 +272,6 @@ async def katil(update, context):
     )
 
 
-# /baslat
 async def baslat(update, context):
     chat_id = update.effective_chat.id
 
@@ -297,7 +285,6 @@ async def baslat(update, context):
     await _do_start_game(context, chat_id)
 
 
-# Inline query
 async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
     user = inline_query.from_user
@@ -316,37 +303,42 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     legal = set(legal_cards_for(chat_id, user.id)) if my_turn else set()
     storage_chat = get_storage_chat(chat_id)
 
-    # Kart file_id'lerini paralel al
-    tasks = [
-        get_card_file_id(context.bot, card_code, storage_chat)
-        for card_code in hand
-    ]
+    # Tüm file_id'leri paralel al
+    tasks = [get_card_file_id(context.bot, card_code, storage_chat) for card_code in hand]
     file_ids = await asyncio.gather(*tasks, return_exceptions=True)
 
-    results = []
+    playable_results = []
+    unplayable_results = []
+
     for idx, (card_code, file_id) in enumerate(zip(hand, file_ids)):
         if isinstance(file_id, Exception) or not file_id:
             continue
 
         if my_turn and card_code in legal:
-            desc = "✅ Oynamak için dokun"
-        elif my_turn:
-            desc = "🚫 Şu an geçersiz (renk/sayı uymuyor)"
-        else:
-            desc = "👁 Sadece görüntüleme — sıra sende değil"
-
-        results.append(
-            InlineQueryResultCachedPhoto(
-                id=f"{card_code}#{idx}",
-                photo_file_id=file_id,
-                title=f"🎴 {card_display_label(card_code)}",
-                description=desc,
+            # Oynanabilir → belirgin (en üste)
+            playable_results.append(
+                InlineQueryResultCachedPhoto(
+                    id=f"{card_code}#{idx}",
+                    photo_file_id=file_id,
+                    title=f"✅ {card_display_label(card_code)}",
+                    description="Oynamak için dokun",
+                )
             )
-        )
+        else:
+            # Oynanamayan → soluk hissi veren metin
+            unplayable_results.append(
+                InlineQueryResultCachedPhoto(
+                    id=f"{card_code}#{idx}",
+                    photo_file_id=file_id,
+                    title=f"🚫 {card_display_label(card_code)}",
+                    description="Şu an geçersiz (renk/sayı uymuyor)" if my_turn else "Sadece görüntüleme",
+                )
+            )
 
-    # Sıra sende ise Kart Çek + Pas her zaman görünsün
+    results = playable_results + unplayable_results
+
+    # Sıra sende ise Kart Çek + Pas her zaman en sonda
     if my_turn:
-        # Kart Çek
         try:
             deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, storage_chat)
             results.append(
@@ -354,13 +346,12 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     id="draw",
                     photo_file_id=deck_file_id,
                     title="🂠 Kart Çek",
-                    description="Kart çek",
+                    description="Desteden 1 kart çek",
                 )
             )
         except Exception:
             pass
 
-        # Pas Geç (her zaman)
         results.append(
             InlineQueryResultArticle(
                 id="pass",
@@ -396,20 +387,19 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if n else f"🂠 {actor_mention} çekmek istedi ama deste boş.",
             parse_mode="HTML",
         )
-        if not game.get("winner"):
-            await announce_turn(context, chat_id)
+        # Sıra geçmez, oyuncu oynayabilir veya pas geçebilir
         return
 
-    # Pas Geç (her zaman izinli)
+    # Pas Geç
     if result_id == "pass":
+        res = pass_turn(chat_id, user.id)
+        if not res["ok"]:
+            return
         await context.bot.send_message(
             chat_id,
             f"⏭ {actor_mention} pas geçti.",
             parse_mode="HTML",
         )
-        # Sırayı ilerlet (game.py'deki fonksiyonuna göre düzenle)
-        # Örnek:
-        # advance_turn(chat_id)  veya  next_turn(chat_id)
         if not game.get("winner"):
             await announce_turn(context, chat_id)
         return
@@ -462,7 +452,6 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await announce_turn(context, chat_id)
 
 
-# /bitir
 async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
@@ -504,7 +493,6 @@ async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# /profil
 async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(update.effective_user.id)
     if not user:
