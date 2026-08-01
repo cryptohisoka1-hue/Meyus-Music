@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 
 from game import *
 from cards_data import (
@@ -6,50 +7,14 @@ from cards_data import (
     COLOR_NAME_TR, COLOR_LABELS, ALL_CARD_CODES,
 )
 from card_cache import get_card_file_id, prewarm_all_cards
-from telegram import InlineQueryResultCachedPhoto
-from telegram import InlineQueryResultArticle, InputTextMessageContent
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import CallbackContext
-
-# 1. Pas Butonunu Oluşturma ve Mesaja Ekleme
-async def gonder_kartlar(update: Update, context: CallbackContext) -> None:
-    """Oyuncunun kartlarını ve pas butonunu gönderen fonksiyon."""
-    
-    # Pas butonunu tanımlıyoruz. callback_data, butona basıldığında bota ne gideceğini belirler.
-    pas_butonu = InlineKeyboardButton("Pas (Kart Çek)", callback_data="pas_eylemi")
-    
-    # Butonu bir satıra yerleştiriyoruz
-    klavye_duzeni = [[pas_butonu]]
-    
-    # Klavye işaretlemesini (markup) oluşturuyoruz
-    reply_markup = InlineKeyboardMarkup(klavye_duzeni)
-    
-    # Kullanıcıya mesajı ve butonu gönderiyoruz
-    await update.message.reply_text(
-        "Sıra sende! Kart oyna veya pas geç.", 
-        reply_markup=reply_markup
-    )
-
-# 2. Pas Butonuna Tıklandığında Yapılacak İşlem (Callback)
-async def pas_butonu_tiklandi(update: Update, context: CallbackContext) -> None:
-    """Oyuncu 'Pas' butonuna bastığında çalışacak kod."""
-    query = update.callback_query
-    
-    # Telegram'daki yükleniyor animasyonunu durduruyoruz
-    await query.answer()
-    
-    # Pas işlemine özel oyun mantığını buraya yazabilirsin (Örn: Oyuncuya deste kartı verilir)
-    # await query.message.reply_text("Pas dedin ve desteden bir kart çektin!")
-    
-    # Butona basıldıktan sonra butonlu mesajı güncelleyebilir veya kaldırabilirsin
-    await query.edit_message_text(text="Pas dediniz. Sıra bir sonraki oyuncuda!")
-
+from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQueryResultCachedPhoto,
     InlineQueryResultArticle,
     InputTextMessageContent,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -332,7 +297,7 @@ async def baslat(update, context):
     await _do_start_game(context, chat_id)
 
 
-# Inline query: sira kimdeyse SADECE ona ozel oynanabilir kartlari + kart cekme secenegini gosterir
+# Inline query: sira kimdeyse SADECE ona ozel oynanabilir kartlari + kart cekme + pas secenegini gosterir
 async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
     user = inline_query.from_user
@@ -351,11 +316,16 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     legal = set(legal_cards_for(chat_id, user.id)) if my_turn else set()
     storage_chat = get_storage_chat(chat_id)
 
+    # Kart file_id'lerini paralel al (performans)
+    tasks = [
+        get_card_file_id(context.bot, card_code, storage_chat)
+        for card_code in hand
+    ]
+    file_ids = await asyncio.gather(*tasks, return_exceptions=True)
+
     results = []
-    for idx, card_code in enumerate(hand):
-        try:
-            file_id = await get_card_file_id(context.bot, card_code, storage_chat)
-        except Exception:
+    for idx, (card_code, file_id) in enumerate(zip(hand, file_ids)):
+        if isinstance(file_id, Exception) or not file_id:
             continue
 
         if my_turn and card_code in legal:
@@ -372,9 +342,11 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 title=f"🎴 {card_display_label(card_code)}",
                 description=desc,
             )
-        
-        if my_turn:
-        # Mevcut kart çekme seçeneği (değişmiyor)
+        )
+
+    # Çek ve Pas seçenekleri (sadece sıra sende ise)
+    if my_turn:
+        # Kart Çek
         try:
             deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, storage_chat)
             results.append(
@@ -387,8 +359,8 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
-        
-        # ⬇️ PAS SEÇENEĞİ EKLE
+
+        # Pas Geç (sadece kart çektikten sonra)
         has_drawn = game.get("has_drawn", {}).get(user.id, False)
         if has_drawn:
             results.append(
@@ -399,7 +371,6 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     description="Kart çektin, oynamak istemiyorsan pas geç",
                 )
             )
-
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
@@ -415,6 +386,7 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     actor_mention = mention_html(user.id, player_name(game, user.id))
 
+    # Kart Çek
     if result_id == "draw":
         res = draw_card(chat_id, user.id)
         if not res["ok"]:
@@ -430,6 +402,33 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await announce_turn(context, chat_id)
         return
 
+    # Pas Geç
+    if result_id == "pass":
+        # has_drawn kontrolü (güvenlik)
+        has_drawn = game.get("has_drawn", {}).get(user.id, False)
+        if not has_drawn:
+            return
+
+        # Sırayı bir sonraki oyuncuya geçir
+        # (game.py içinde next_turn / pass_turn fonksiyonun varsa onu kullan)
+        if "has_drawn" in game and user.id in game["has_drawn"]:
+            game["has_drawn"][user.id] = False
+
+        # Basit sıra ilerletme (kendi game mantığına göre ayarla)
+        # next_player(chat_id) veya advance_turn(chat_id) gibi bir fonksiyonun varsa çağır
+        # Aşağıdaki satır örnek — kendi game.py'ne göre düzenle:
+        # advance_turn(chat_id)
+
+        await context.bot.send_message(
+            chat_id,
+            f"⏭ {actor_mention} pas geçti.",
+            parse_mode="HTML",
+        )
+        if not game.get("winner"):
+            await announce_turn(context, chat_id)
+        return
+
+    # Normal kart oynama
     card_code = result_id.split("#", 1)[0]
 
     res = play_card(chat_id, user.id, card_code)
@@ -584,8 +583,6 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(InlineQueryHandler(inline_hand))
     app.add_handler(ChosenInlineResultHandler(chosen_result))
-    # app.add_handler(CommandHandler("kartlar", gonder_kartlar))
-# app.add_handler(CallbackQueryHandler(pas_butonu_tiklandi, pattern="^pas_eylemi$"))
 
     print("✅ Meyus UNO çalışıyor...")
     app.run_polling()
