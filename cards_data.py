@@ -5,7 +5,7 @@ from card_sticker_map import CARD_TO_STICKER_INDEX  # <-- EKLENDİ
 # Kart görselleri için temel URL
 # GitHub Raw veya kendi CDN'inizi kullanın
 BASE_URL = os.getenv("CARDS_BASE_URL",
-    "https://raw.githubusercontent.com/cryptohisoka1-hue/Meyus-Music/main/assets/cards")
+    "https://raw.githubusercontent.com/cryptohisoka1-hue/Meyus-Music/main/assets")
 
 # Eğer kartları yerel kullanacaksanız:
 # BASE_URL = "assets/cards"
