@@ -7,11 +7,14 @@ from cards_data import (
     COLOR_NAME_TR, COLOR_LABELS, ALL_CARD_CODES,
 )
 from card_cache import get_card_file_id, prewarm_all_cards
+from sticker_cache import get_sticker_set, get_card_sticker_file_id
+from card_sticker_map import CARD_TO_STICKER_INDEX
 from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQueryResultCachedPhoto,
+    InlineQueryResultCachedSticker,
     InlineQueryResultArticle,
     InputTextMessageContent,
 )
@@ -24,7 +27,7 @@ from telegram.ext import (
     ContextTypes,
 )
 from telegram.error import ChatMigrated
-from config import BOT_TOKEN, STORAGE_CHAT_ID
+from config import BOT_TOKEN, STORAGE_CHAT_ID, STICKER_SET_NAME
 from database import db
 
 
@@ -273,6 +276,26 @@ async def baslat(update, context):
     await _do_start_game(context, chat_id)
 
 
+# /stickerlar - sticker paketinin icerigini index+emoji olarak listeler.
+# Bu, CARD_TO_STICKER_INDEX eslesmesini olusturmak icin bir kereye
+# mahsus kullanilir; sonrasinda kaldirilabilir.
+async def stickerlar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        sticker_set = await get_sticker_set(context.bot, STICKER_SET_NAME)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Sticker paketi alınamadı: {e}")
+        return
+
+    lines = [f"📦 Paket: {sticker_set.name} ({len(sticker_set.stickers)} sticker)\n"]
+    for idx, s in enumerate(sticker_set.stickers):
+        lines.append(f"{idx}: {s.emoji or '—'}")
+
+    text = "\n".join(lines)
+    # Telegram mesaj limiti 4096 karakter, gerekirse parcala
+    for i in range(0, len(text), 3500):
+        await update.message.reply_text(text[i:i + 3500])
+
+
 # /cek - kart çek (sıra sendeyken)
 async def cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -362,11 +385,14 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     results = []
     for idx, card_code in enumerate(hand):
-        try:
-            file_id = await get_card_file_id(context.bot, card_code, cache_chat_id)
-        except Exception as e:
-            print(f"⚠️ Kart görseli yüklenemedi ({card_code}): {e}")
-            continue
+        sticker_file_id = None
+        if card_code in CARD_TO_STICKER_INDEX:
+            try:
+                sticker_file_id = await get_card_sticker_file_id(
+                    context.bot, STICKER_SET_NAME, card_code, CARD_TO_STICKER_INDEX
+                )
+            except Exception as e:
+                print(f"⚠️ Sticker alınamadı ({card_code}): {e}")
 
         if my_turn and card_code in legal:
             desc = "✅ Oynamak için dokun"
@@ -374,6 +400,21 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
             desc = "🚫 Şu an geçersiz (renk/sayı uymuyor)"
         else:
             desc = "👁 Sadece görüntüleme — sıra sende değil"
+
+        if sticker_file_id:
+            results.append(
+                InlineQueryResultCachedSticker(
+                    id=f"{card_code}#{idx}",
+                    sticker_file_id=sticker_file_id,
+                )
+            )
+            continue
+
+        try:
+            file_id = await get_card_file_id(context.bot, card_code, cache_chat_id)
+        except Exception as e:
+            print(f"⚠️ Kart görseli yüklenemedi ({card_code}): {e}")
+            continue
 
         results.append(
             InlineQueryResultCachedPhoto(
@@ -619,6 +660,7 @@ def main():
     app.add_handler(CommandHandler("profil", profil))
     app.add_handler(CommandHandler("cek", cek))
     app.add_handler(CommandHandler("pas", pas))
+    app.add_handler(CommandHandler("stickerlar", stickerlar))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(InlineQueryHandler(inline_hand))
     app.add_handler(ChosenInlineResultHandler(chosen_result))
