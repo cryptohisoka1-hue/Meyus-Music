@@ -1,7 +1,4 @@
-
-# 2. database.py
-
-database_content = '''import sqlite3
+'''import sqlite3
 import json
 from config import DATABASE_NAME
 
