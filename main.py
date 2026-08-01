@@ -6,7 +6,42 @@ from cards_data import (
     COLOR_NAME_TR, COLOR_LABELS, ALL_CARD_CODES,
 )
 from card_cache import get_card_file_id, prewarm_all_cards
-from telegram import (
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import CallbackContext
+
+# 1. Pas Butonunu Oluşturma ve Mesaja Ekleme
+async def gonder_kartlar(update: Update, context: CallbackContext) -> None:
+    """Oyuncunun kartlarını ve pas butonunu gönderen fonksiyon."""
+    
+    # Pas butonunu tanımlıyoruz. callback_data, butona basıldığında bota ne gideceğini belirler.
+    pas_butonu = InlineKeyboardButton("Pas (Kart Çek)", callback_data="pas_eylemi")
+    
+    # Butonu bir satıra yerleştiriyoruz
+    klavye_duzeni = [[pas_butonu]]
+    
+    # Klavye işaretlemesini (markup) oluşturuyoruz
+    reply_markup = InlineKeyboardMarkup(klavye_duzeni)
+    
+    # Kullanıcıya mesajı ve butonu gönderiyoruz
+    await update.message.reply_text(
+        "Sıra sende! Kart oyna veya pas geç.", 
+        reply_markup=reply_markup
+    )
+
+# 2. Pas Butonuna Tıklandığında Yapılacak İşlem (Callback)
+async def pas_butonu_tiklandi(update: Update, context: CallbackContext) -> None:
+    """Oyuncu 'Pas' butonuna bastığında çalışacak kod."""
+    query = update.callback_query
+    
+    # Telegram'daki yükleniyor animasyonunu durduruyoruz
+    await query.answer()
+    
+    # Pas işlemine özel oyun mantığını buraya yazabilirsin (Örn: Oyuncuya deste kartı verilir)
+    # await query.message.reply_text("Pas dedin ve desteden bir kart çektin!")
+    
+    # Butona basıldıktan sonra butonlu mesajı güncelleyebilir veya kaldırabilirsin
+    await query.edit_message_text(text="Pas dediniz. Sıra bir sonraki oyuncuda!")
+
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
