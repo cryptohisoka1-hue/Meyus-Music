@@ -3,5 +3,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-DB_PATH = os.getenv("DB_PATH", "uno.db")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+DATABASE_NAME = "uno.db"
+ADMIN_ID = None  # 890063867
