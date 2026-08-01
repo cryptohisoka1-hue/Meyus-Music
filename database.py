@@ -1,49 +1,48 @@
-import sqlite3
-import aiosqlite
+
+# 2. database.py
+
+database_content = '''import sqlite3
+import json
 from config import DATABASE_NAME
 
-async def init_db():
-    async with aiosqlite.connect(DATABASE_NAME) as db:
-        await db.execute("""
+
+class Database:
+    def __init__(self):
+        self.conn = sqlite3.connect(DATABASE_NAME, check_same_thread=False)
+        self._init_tables()
+
+    def _init_tables(self):
+        cursor = self.conn.cursor()
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS games (
                 game_id TEXT PRIMARY KEY,
-                deck TEXT,
-                discard_pile TEXT,
-                current_turn INTEGER,
-                direction INTEGER,
-                players TEXT,
-                active BOOLEAN DEFAULT 1
+                state TEXT
             )
         """)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS players (
-                user_id INTEGER PRIMARY KEY,
-                hand TEXT,
-                game_id TEXT
-            )
-        """)
-        await db.commit()
+        self.conn.commit()
 
-async def save_game(game_id, data):
-    async with aiosqlite.connect(DATABASE_NAME) as db:
-        await db.execute("REPLACE INTO games (game_id, deck, discard_pile, current_turn, direction, players, active) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                         (game_id, data['deck'], data['discard'], data['turn'], data['direction'], str(data['players']), 1))
-        await db.commit()
+    def save_state(self, game_id, state):
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "REPLACE INTO games (game_id, state) VALUES (?, ?)",
+            (str(game_id), json.dumps(state))
+        )
+        self.conn.commit()
 
-async def get_game(game_id):
-    async with aiosqlite.connect(DATABASE_NAME) as db:
-        cursor = await db.execute("SELECT * FROM games WHERE game_id = ?", (game_id,))
-        row = await cursor.fetchone()
-        return row
+    def load_state(self, game_id):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT state FROM games WHERE game_id = ?", (str(game_id),))
+        row = cursor.fetchone()
+        if row:
+            return json.loads(row[0])
+        return None
 
-async def add_player(user_id, game_id, hand):
-    async with aiosqlite.connect(DATABASE_NAME) as db:
-        await db.execute("INSERT OR REPLACE INTO players (user_id, hand, game_id) VALUES (?, ?, ?)", (user_id, str(hand), game_id))
-        await db.commit()
+    def delete_state(self, game_id):
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM games WHERE game_id = ?", (str(game_id),))
+        self.conn.commit()
+'''
 
-async def get_player_hand(user_id):
-    async with aiosqlite.connect(DATABASE_NAME) as db:
-        cursor = await db.execute("SELECT hand FROM players WHERE user_id = ?", (user_id,))
-        row = await cursor.fetchone()
-        return eval(row) if row else 
-        
+with open('/mnt/agents/output/database.py', 'w', encoding='utf-8') as f:
+    f.write(database_content)
+print("✅ database.py")
