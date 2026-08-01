@@ -1,653 +1,592 @@
-# Telegram bot webhook code
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Telegram bot to play UNO in group chats
+# Copyright (c) 2016 Jannes Höke <uno@jhoeke.de>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 
 import logging
-import os
-import random
-
-import uno, unoparser
-from plural import plural
-import server
-
-from telegram import ParseMode, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-from telegram.error import TelegramError, Unauthorized, BadRequest, TimedOut, ChatMigrated, NetworkError
-
-bot = None
-
-def main():
-
-	# Environment vars
-	TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
-	TELEGRAM_BOT_WEBHOOK = os.environ.get('TELEGRAM_BOT_WEBHOOK')
-	PORT = os.environ.get('PORT')
-
-	# Enable logging
-	logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-	logger = logging.getLogger(__name__)
-
-	## Bot setup
-	# Set up the Updater
-	updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
-
-	global bot
-	bot = updater.bot
-
-	## Handlers
-	dp = updater.dispatcher
-
-	# Command handlers
-	dp.add_handler(CommandHandler('start', handler_start))
-	dp.add_handler(CommandHandler('help', handler_help))
-	dp.add_handler(CommandHandler('settings', handler_settings))
-
-	dp.add_handler(CommandHandler('status', handler_status))
-	dp.add_handler(CommandHandler('new', handler_new))
-	dp.add_handler(CommandHandler('join', handler_join))
-	dp.add_handler(CommandHandler('leave', handler_leave))
-	dp.add_handler(CommandHandler('begin', handler_begin))
-	dp.add_handler(CommandHandler('end', handler_end))
-
-	dp.add_handler(CommandHandler('chat', handler_chat))
-	dp.add_handler(CommandHandler('configs', handler_configs))
-
-	# secret
-	dp.add_handler(CommandHandler('error', handler_error))
-
-	# Message handlers
-	dp.add_handler(MessageHandler(Filters.text & Filters.chat_type.private, handler_text_message))
-
-	dp.add_error_handler(error_handler)
-
-	# Start the webhook
-	updater.start_webhook(listen="0.0.0.0", port=int(PORT), url_path=TELEGRAM_BOT_TOKEN,
-		webhook_url=TELEGRAM_BOT_WEBHOOK + TELEGRAM_BOT_TOKEN, drop_pending_updates=True, allowed_updates=["message"])
-	updater.idle()
-
-## Bot handlers
-
-def handler_start(update, context):
-	handler_help(update, context)
-
-def handler_help(update, context):
-	update.message.reply_text(help_text(), parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=ReplyKeyboardRemove())
-
-def handler_settings(update, context):
-	
-	text = ''
-	user_id = update.message.from_user.id
-
-	settings = server.get_user_settings(user_id)
-
-	if len(context.args) == 0:
-		
-		text += 'Your current settings:\n'
-
-		for setting in server.all_settings:
-			default = server.all_settings[setting][0]
-			text += setting + ': ' + str(settings.get(setting, default)) + '\n'
-
-	elif len(context.args) == 1:
-
-		setting = context.args[0].lower()
-
-		if setting in server.all_settings:
-			default = server.all_settings[setting][0]
-			text += setting + ': ' + str(settings.get(setting, default)) + '\n'
-			text += 'Possible values: ' + ", ".join(server.all_settings[setting]) + '\n'
-		else:
-			text += 'This setting does not exist!\n'
-
-	elif len(context.args) >= 2:
-
-		setting = context.args[0].lower()
-		value = context.args[1].lower()
-
-		if setting in server.all_settings:
-			if value in server.all_settings[setting]:
-
-				server.update_user_settings(user_id, setting, value)
-				server.commit()
-
-				text += 'Setting set.\n'
-			else:
-				text += 'This value is not allowed for this setting!\n'
-		else:
-			text += 'This setting does not exist!\n'
-
-	update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
-
-def handler_status(update, context):
-
-	user_id = update.message.from_user.id
-
-	settings = get_and_apply_user_settings(user_id)
-	text = get_status_text(server.get_current_room(user_id), user_id)
-
-	bot.send_message(user_id, text, parse_mode=ParseMode.HTML, reply_markup=ReplyKeyboardRemove())
-
-def handler_new(update, context):
-	
-	text = ''
-	user_id = update.message.from_user.id
-	current_room_id = server.get_current_room(user_id)
-
-	if current_room_id == None:
-		room_id = server.insert_room()
-		server.insert_user_to_room(room_id, user_id)
-		server.commit()
-
-		text += 'Created and joined room ' + str(room_id) + '.\n'
-	
-	else:
-		text = 'You are already in room ' + str(current_room_id) + '! You must /leave that room first.\n'
-
-	update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
-
-def handler_join(update, context):
-
-	text, text_to_all = '', ''
-	user_id = update.message.from_user.id
-	room_id = None
-
-	if len(context.args) > 0:
-		room_id = string_to_positive_integer(context.args[0])
-
-		if room_id != None:
-
-			current_room_id = server.get_current_room(user_id)
-			room_exists = server.check_room_exists(room_id)
-			game = None
-
-			if current_room_id:
-				text += 'You are already in room ' + str(current_room_id) + '! You must /leave that room first.\n'
-
-			if not room_exists:
-				text += 'This room does not exist!\n'
-			else:
-				game = server.select_game(room_id)
-
-			if game:
-				text += 'A game is being played in this room! They must /end it before anyone can join.\n'
-
-			if not current_room_id and room_exists and not game:
-				server.insert_user_to_room(room_id, user_id)
-				server.commit()
-
-				text += 'Joined room ' + str(room_id) + '.\n'
-				text_to_all += get_user_name(user_id) + ' joined the room.\n'
-			
-		else:
-			text += 'This can\'t possibly be a room! Come on!\n'
-
-	else:
-		text += 'You have not said the room you want to join! Try /join <room number>\n'
-
-	update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
-	send_message_to_room(room_id, text_to_all)
-
-def handler_leave(update, context):
-	
-	text, text_to_all = '', ''
-	user_id = update.message.from_user.id
-	room_id = server.get_current_room(user_id)
-
-	if room_id:
-
-		game = server.select_game(room_id)
-
-		if not game:
-
-			server.delete_user_from_room(user_id)
-
-			text += 'You have left room number '+str(room_id)+'.\n'
-
-			if server.check_room_empty(room_id):
-				server.delete_room(room_id)
-
-				text += 'The room was empty with your departure, so it has been deleted.\n'
-			else:
-				text_to_all += get_user_name(user_id) + ' left the room.\n'
-
-			server.commit()
-
-		else:
-			text += 'A game is being played in this room! Someone must /end it before anyone can leave.\n'
-		
-	else:
-		text += 'You are not in any room right now!\n'
-
-	update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
-	send_message_to_room(room_id, text_to_all)
-
-def handler_begin(update, context):
-
-	text, text_to_all = '', ''
-	user_id = update.message.from_user.id
-	room_id = server.get_current_room(user_id)
-
-	if room_id:
-		users = server.select_users_info_in_room(room_id)
-
-		game = server.select_game(room_id)
-		if not game:
-			text_to_all += get_user_name(user_id) + ' has begun the game'
-		else:
-			text_to_all += get_user_name(user_id) + ' has rebegun the game'
-
-		game = uno.Game()
-
-		configs = server.get_room_configs(room_id)
-		apply_room_configs(configs, game)
-
-		game.begin(len(users))
-
-		server.update_game(room_id, game)
-
-		numbers = list(range(len(users)))
-		random.shuffle(numbers)
-
-		for for_player_number, for_user_id in users:
-			server.update_player_number(room_id, for_user_id, numbers.pop())
-
-		server.commit()
-
-		send_message_to_room(room_id, text_to_all)
-
-		def get_user_status_text(user_id):
-			settings = get_and_apply_user_settings(user_id)
-			return get_status_text(room_id, user_id, show_room_info=False)
-
-		send_message_to_room(room_id, get_user_status_text, parse_mode=ParseMode.HTML)
-
-	else:
-		update.message.reply_text("You cannot begin the game if you are not in a room! Try /new or /join <room number>", reply_markup=ReplyKeyboardRemove())
-
-def handler_end(update, context):
-	
-	user_id = update.message.from_user.id
-	room_id = server.get_current_room(user_id)
-
-	if room_id:
-
-		game = server.select_game(room_id)
-
-		if game:
-			server.update_game(room_id, None)
-			server.commit()
-
-			send_message_to_room(room_id, get_user_name(user_id) + ' has ended the game')
-
-		else:
-			update.message.reply_text("But there is no game going on!", reply_markup=ReplyKeyboardRemove())
-
-	else:
-		update.message.reply_text("You cannot end the game if you are not in a room! Try /new or /join <room number>", reply_markup=ReplyKeyboardRemove())
-
-def handler_chat(update, context):
-
-	user_id = update.message.from_user.id
-	room_id = server.get_current_room(user_id)
-
-	message = update.message.text[len('/chat '):]
-
-	command_chat(update, user_id, room_id, message)
-
-def handler_configs(update, context):
-
-	text, text_to_all = '', ''
-	reply_markup = ReplyKeyboardRemove()
-
-	user_id = update.message.from_user.id
-	room_id = server.get_current_room(user_id)
-
-	if room_id:
-		
-		configs = server.get_room_configs(room_id)
-
-		if len(context.args) == 0:
-
-			text += 'Current configurations of room ' + str(room_id) + ':\n'
-
-			for config in server.all_configs:
-				default = server.all_configs[config][0]
-				text += config + ': ' + str(configs.get(config, default)) + '\n'
-
-			reply_markup = ReplyKeyboardMarkup([[("/configs " + x)] for x in list(server.all_configs.keys())], input_field_placeholder="Choose a configuration...", one_time_keyboard=True)
-
-		elif len(context.args) == 1:
-
-			config = context.args[0].lower()
-
-			if config in server.all_configs:
-				default = server.all_configs[config][0]
-				text += config + ': ' + str(configs.get(config, default)) + '\n'
-				text += 'Possible values: ' + ", ".join(server.all_configs[config]) + '\n'
-			else:
-				text += 'This configuration does not exist!\n'
-
-		elif len(context.args) >= 2:
-
-			config = context.args[0].lower()
-			value = context.args[1].lower()
-
-			if config in server.all_configs:
-				if value in server.all_configs[config]:
-
-					server.update_room_config(room_id, config, value)
-					server.commit()
-
-					send_message_to_room(room_id,
-						get_user_name(user_id) + ' set room configuration ' + config + ' to ' + value + '\n')
-
-					return
-
-				else:
-					text += 'This value is not allowed for this configuration!\n'
-			else:
-				text += 'This configuration does not exist!\n'
-
-	else:
-		text += 'You cannot change room configuration if you are not in a room!\n'
-	
-	if text:
-		update.message.reply_text(text, reply_markup=reply_markup)
-
-def handler_error(update, context):
-
-	user_id = update.message.from_user.id
-	bot.send_message(user_id, get_error_message(), reply_markup=ReplyKeyboardRemove())
-
-def handler_text_message(update, context):
-	
-	user_id = update.message.from_user.id
-	room_id = server.get_current_room(user_id)
-
-	message = update.message.text
-
-	# Check if it is a chat message
-	if (len(message) > 0 and message[0] == "."):
-		command_chat(update, user_id, room_id, message[1:])
-		return
-
-	if room_id:
-
-		game = server.select_game(room_id)
-		player_number = server.select_player_number(room_id, user_id)
-	
-		if game:
-
-			configs = server.get_room_configs(room_id)
-			apply_room_configs(configs, game)
-
-			# Check if someone has already won the game
-			if game.winner != None:
-				winner_user_id = server.select_user_id_from_player_number(room_id, game.winner)
-				update.message.reply_text(get_user_name(winner_user_id) + ' already won this game! You cannot play anymore. Try /begin', reply_markup=ReplyKeyboardRemove())
-				return
-
-			# Check if is the current player
-			if game.current_player != player_number:
-				current_user_id = server.select_user_id_from_player_number(room_id, game.current_player)
-				update.message.reply_text('It is not your turn! The current player is ' + get_user_name(current_user_id), reply_markup=ReplyKeyboardRemove())
-				return
-
-			# Try to parse the user text
-			try:
-				play = unoparser.parse_play(message)
-
-			except unoparser.InputParsingError as e:
-				update.message.reply_text('That is not how you play! ' + str(e) + ' And try reading /help', reply_markup=ReplyKeyboardRemove())
-				return
-
-			bluffed_player = game.previous_player
-
-			# Execute the play
-			play_result = game.play(player_number, play)
-
-			# If failed, send reason
-			if not play_result.success:
-				fail_reason = unoparser.fail_reason_string(play_result.fail_reason)
-				update.message.reply_text(fail_reason, reply_markup=ReplyKeyboardRemove())
-				return
-
-			if play_result.draw_pile_has_emptied:
-				send_message_to_room(room_id,
-					'The draw pile does not have enough cards, cards from the discard pile have been shuffled into the draw pile.', reply_markup=ReplyKeyboardRemove())
-
-			# Store game in database
-			server.update_game(room_id, game)
-			server.commit()
-
-			# Send info messages
-
-			current_user_id = server.select_user_id_from_player_number(room_id, game.current_player)
-
-			user_name = get_user_name(user_id)
-
-			if play_result.action == uno.ACTION_CALL_BLUFF:
-				bluffed_user_id = server.select_user_id_from_player_number(room_id, bluffed_player)
-				bluffed_user_name = get_user_name(bluffed_user_id)
-			else:
-				bluffed_user_name = None
-
-			# For all users in room...
-			for room_user_id in server.select_users_ids_in_room(room_id):
-				settings = get_and_apply_user_settings(room_user_id)
-
-				# Send made play
-				play_number_text = ''
-				if settings.get('show_play_number', 'false') == 'true':
-					play_number_text = '#' + str(game.current_play_number) + ': '
-
-				play_result_text = play_number_text + unoparser.play_result_string(play_result, user_name, bluffed_user_name)
-				bot.send_message(room_user_id, play_result_text, reply_markup=ReplyKeyboardRemove())
-
-				# Send if someone won
-				if game.winner != None:
-					bot.send_message(room_user_id, user_name + ' won.', reply_markup=ReplyKeyboardRemove())
-					continue
-
-				# Send status to current player
-				if room_user_id == current_user_id:
-					text = get_status_text(room_id, room_user_id, show_your_turn=True, show_room_info=False)
-					bot.send_message(room_user_id, text, parse_mode=ParseMode.HTML, reply_markup=ReplyKeyboardRemove())
-
-		else:
-			update.message.reply_text('There is no game going on! Try /begin', reply_markup=ReplyKeyboardRemove())
-
-	else:
-		update.message.reply_text('You cannot play if you are not in a room! Try /new or /join <room number>', reply_markup=ReplyKeyboardRemove())
-
-def error_handler(update, context):
-	try:
-		raise context.error
-	except Unauthorized:
-		# remove update.message.chat_id from conversation list
-		logging.exception('Uncaught')
-	except BadRequest:
-		# handle malformed requests - read more below!
-		logging.exception('Uncaught')
-	except TimedOut:
-		# handle slow connection problems
-		logging.exception('Uncaught')
-	except NetworkError:
-		# handle other connection problems
-		logging.exception('Uncaught')
-	except ChatMigrated as e:
-		# the chat_id of a group has changed, use e.new_chat_id instead
-		logging.exception('Uncaught')
-	except TelegramError:
-		# handle all other telegram related errors
-		logging.exception('Uncaught')
-	except Exception as e:
-		bot.send_message(update.message.from_user.id, get_error_message(), reply_markup=ReplyKeyboardRemove())
-		logging.exception('Uncaught')
-
-## Helper functions
-
-def help_text():
-	return (
-		"<b>ZeroXis bot - made by</b> @luizeldorado\n"
-		"\n"
-		"/help - Shows this\n"
-		"/status - Show what's going on\n"
-		"/new - Create new room\n"
-		"/join - Join a room\n"
-		"/leave - Leave a room\n"
-		"/begin - Begin game\n"
-		"/end - End game\n"
-		"/chat or . - Send a message to all in room\n"
-		"/settings - Change user settings\n"
-		"/configs - Change room configurations\n"
-		"\n"
-		"When in game, send a message to make a play.\n"
-		"d - Draw card(s)\n"
-		"p - Pass\n"
-		"c - Call bluff\n"
-		"&lt;color&gt;&lt;kind&gt; - Play card of said color and kind.\n"
-		"&lt;color&gt; can be b, g, r, y, or nothing in kinds that have no color.\n"
-		"&lt;kind&gt; can be 0 to 9, r, s, +2, +4, or w\n"
-		"+4 and w have no color, but you have to specify a color after it.\n"
-		"Examples: g6, rr, +4y\n"
-		"\n"
-		"Github: https://github.com/luizeldorado/uno-telegram-bot\n"
-	)
-
-def command_chat(update, user_id, room_id, message):
-
-	if room_id:
-		text_to_all = get_user_name(user_id) + ': ' + message
-		send_message_to_room(room_id, text_to_all, not_me=user_id)
-
-	else:
-		text = 'You cannot send chat messages if you are not in a room!'
-		update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
-
-def string_to_positive_integer(string):
-	try:
-		number = int(string)
-	except ValueError:
-		return None
-
-	if number >= 0:
-		return number
-	return None
-
-def send_message_to_room(room_id, text, not_me=None, parse_mode=None):
-	if text and room_id:
-		for user_id in server.select_users_ids_in_room(room_id):
-			if user_id != not_me:
-
-				if callable(text):
-					new_text = text(user_id)
-					if new_text:
-						bot.send_message(user_id, new_text, parse_mode=parse_mode, disable_web_page_preview=True, reply_markup=ReplyKeyboardRemove())
-				else:
-					bot.send_message(user_id, text, parse_mode=parse_mode, disable_web_page_preview=True, reply_markup=ReplyKeyboardRemove())
-
-def get_status_text(room_id, user_id, show_room_info=True, show_your_turn=False):
-
-	text = ''
-
-	if room_id:
-		users = server.select_users_info_in_room(room_id)
-		game = server.select_game(room_id)
-		
-		configs = server.get_room_configs(room_id)
-		apply_room_configs(configs, game)
-
-		if show_room_info:
-			num_users = len(users)
-			text += ('You are currently in room number ' + str(room_id)
-				+ ', which has ' + str(num_users) + ' ' + plural(num_users, 'user', 'users') + '.\n')
-
-		if show_your_turn:
-			text += 'It is your turn.\n'
-
-		if game:
-			if game.direction == -1:
-				users.reverse()
-
-		for for_player_number, for_user_id in users:
-
-			for_user_name = get_user_name(for_user_id)
-
-			if game:
-				num_cards = len(game.player_cards[for_player_number])
-				text += (str(for_player_number) + ': ' + for_user_name
-					+ ' (' + str(num_cards) + ' ' + plural(num_cards, 'card', 'cards') + ')')
-
-				if game.winner == None:
-					if game.current_player == for_player_number:
-						text += ' &lt;- Current'
-					elif game.get_next_player() == for_player_number:
-						text += ' &lt;- Next'
-				elif game.winner == for_player_number:
-					text += ' &lt;- Winner'
-
-			else:
-				text += '- ' + for_user_name
-
-			text += '\n'
-
-		if game:
-
-			text += 'Current card: ' + unoparser.card_string(game.current_card) + '\n'
-			if game.current_color != game.current_card.color:
-				text += 'Chosen color: ' + unoparser.card_color_string(game.current_color) + '\n'
-
-			player_number = next((for_player_number for for_player_number, for_user_id in users if for_user_id == user_id))
-
-			text += 'Your cards: '
-
-			if len(game.player_cards[player_number]) != 0:
-				text += unoparser.play_intent_list_string(game.get_play_intents_cards(player_number))
-			else:
-				text += 'None!'
-
-			text += '\n'
-
-	else:
-		text += 'You are currently not joined in any room.\n'
-
-	return text
-
-def get_error_message():
-	return random.choice((
-		"Could you just not?",
-		"Don't you have anything better to do?",
-		"Excuse me for one second, I have to do something.",
-		"I can't listen. I'm out of phone signal. Bye.",
-		"I just don't wanna do it right now",
-		"I'm not in the mood. Maybe later.",
-		"Leave me alone at least for one second",
-		"Please, you're annoying me",
-		"Remind me later.",
-		"Screw this, I don't want to work on this garbage.",
-		"Sorry, my cat is suffering from dysentery now.",
-		"Sure, I'm gonna do that.",
-		"This action requires Telegram Gold.",
-		"Will I be able to finally relax one day?",
-		"You could be living your life but you are texting a lifeless bot. Nice.",
-		"no u",
-		"I am error.",
-	))
-
-def get_and_apply_user_settings(user_id):
-
-	settings = server.get_user_settings(user_id)
-
-	style = settings.get('style', 'short')
-
-	if style == 'short':
-		unoparser.COLOR_STRINGS = unoparser.COLOR_STRINGS_SHORT
-		unoparser.KIND_STRINGS = unoparser.KIND_STRINGS_SHORT
-	elif style == 'emoji':
-		unoparser.COLOR_STRINGS = unoparser.COLOR_STRINGS_EMOJI
-		unoparser.KIND_STRINGS = unoparser.KIND_STRINGS_SHORT
-	elif style == 'circle':
-		unoparser.COLOR_STRINGS = unoparser.COLOR_STRINGS_CIRCLE
-		unoparser.KIND_STRINGS = unoparser.KIND_STRINGS_SHORT
-	elif style == 'heart':
-		unoparser.COLOR_STRINGS = unoparser.COLOR_STRINGS_HEART
-		unoparser.KIND_STRINGS = unoparser.KIND_STRINGS_SHOR
+from datetime import datetime
+from random import randint
+
+from telegram import ParseMode, Message, Chat, InlineKeyboardMarkup, \
+    InlineKeyboardButton
+from telegram.ext import InlineQueryHandler, ChosenInlineResultHandler, \
+    CommandHandler, MessageHandler, Filters, CallbackQueryHandler
+from telegram.ext.dispatcher import run_async
+
+from start_bot import start_bot
+from results import (add_call_bluff, add_choose_color, add_draw, add_gameinfo,
+                     add_no_game, add_not_started, add_other_cards, add_pass,
+                     add_card)
+from user_setting import UserSetting
+from utils import display_name
+import card as c
+from errors import (NoGameInChatError, LobbyClosedError, AlreadyJoinedError,
+                    NotEnoughPlayersError, DeckEmptyError)
+from utils import send_async, answer_async, error, TIMEOUT
+from shared_vars import botan, gm, updater, dispatcher
+from internationalization import _, __, user_locale, game_locales
+import simple_commands
+import settings
+
+from simple_commands import help
+
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@user_locale
+def notify_me(bot, update):
+    """Handler for /notify_me command, pm people for next game"""
+    chat_id = update.message.chat_id
+    if update.message.chat.type == 'private':
+        send_async(bot,
+                   chat_id,
+                   text=_("Send this command in a group to be notified "
+                          "when a new game is started there."))
+    else:
+        try:
+            gm.remind_dict[chat_id].add(update.message.from_user.id)
+        except KeyError:
+            gm.remind_dict[chat_id] = {update.message.from_user.id}
+
+
+@user_locale
+def new_game(bot, update):
+    """Handler for the /new command"""
+    chat_id = update.message.chat_id
+
+    if update.message.chat.type == 'private':
+        help(bot, update)
+
+    else:
+
+        if update.message.chat_id in gm.remind_dict:
+            for user in gm.remind_dict[update.message.chat_id]:
+                send_async(bot,
+                           user,
+                           text=_("A new game has been started in {title}").format(
+                                title=update.message.chat.title))
+
+            del gm.remind_dict[update.message.chat_id]
+
+        game = gm.new_game(update.message.chat)
+        game.owner = update.message.from_user
+        send_async(bot, chat_id,
+                   text=_("Created a new game! Join the game with /join "
+                          "and start the game with /start"))
+
+        if botan:
+            botan.track(update.message, 'New games')
+
+
+@user_locale
+def join_game(bot, update):
+    """Handler for the /join command"""
+    chat = update.message.chat
+
+    if update.message.chat.type == 'private':
+        help(bot, update)
+        return
+
+    try:
+        gm.join_game(update.message.from_user, chat)
+
+    except LobbyClosedError:
+            send_async(bot, chat.id, text=_("The lobby is closed"))
+
+    except NoGameInChatError:
+        send_async(bot, chat.id,
+                   text=_("No game is running at the moment. "
+                          "Create a new game with /new"),
+                   reply_to_message_id=update.message.message_id)
+
+    except AlreadyJoinedError:
+        send_async(bot, chat.id,
+                   text=_("You already joined the game. Start the game "
+                          "with /start"),
+                   reply_to_message_id=update.message.message_id)
+
+    except DeckEmptyError:
+        send_async(bot, chat.id,
+                   text=_("There are not enough cards left in the deck for "
+                          "new players to join."),
+                   reply_to_message_id=update.message.message_id)
+
+    else:
+        send_async(bot, chat.id,
+                   text=_("Joined the game"),
+                   reply_to_message_id=update.message.message_id)
+
+
+@user_locale
+def leave_game(bot, update):
+    """Handler for the /leave command"""
+    chat = update.message.chat
+    user = update.message.from_user
+
+    player = gm.player_for_user_in_chat(user, chat)
+
+    if player is None:
+        send_async(bot, chat.id, text=_("You are not playing in a game in "
+                                        "this group."),
+                   reply_to_message_id=update.message.message_id)
+        return
+
+    game = player.game
+    user = update.message.from_user
+
+    try:
+        gm.leave_game(user, chat)
+
+    except NoGameInChatError:
+        send_async(bot, chat.id, text=_("You are not playing in a game in "
+                                        "this group."),
+                   reply_to_message_id=update.message.message_id)
+
+    except NotEnoughPlayersError:
+        gm.end_game(chat, user)
+        send_async(bot, chat.id, text=__("Game ended!", multi=game.translate))
+
+    else:
+        send_async(bot, chat.id,
+                   text=__("Okay. Next Player: {name}",
+                           multi=game.translate).format(
+                       name=display_name(game.current_player.user)),
+                   reply_to_message_id=update.message.message_id)
+
+
+def select_game(bot, update):
+    """Handler for callback queries to select the current game"""
+
+    chat_id = int(update.callback_query.data)
+    user_id = update.callback_query.from_user.id
+    players = gm.userid_players[user_id]
+    for player in players:
+        if player.game.chat.id == chat_id:
+            gm.userid_current[user_id] = player
+            break
+    else:
+        send_async(bot,
+                   update.callback_query.message.chat_id,
+                   text=_("Game not found."))
+        return
+
+    @run_async
+    def selected(bot):
+        back = [[InlineKeyboardButton(text=_("Back to last group"),
+                                      switch_inline_query='')]]
+        bot.answerCallbackQuery(update.callback_query.id,
+                                text=_("Please switch to the group you selected!"),
+                                show_alert=False,
+                                timeout=TIMEOUT)
+
+        bot.editMessageText(chat_id=update.callback_query.message.chat_id,
+                            message_id=update.callback_query.message.message_id,
+                            text=_("Selected group: {group}\n"
+                                   "<b>Make sure that you switch to the correct "
+                                   "group!</b>").format(
+                                group=gm.userid_current[user_id].game.chat.title),
+                            reply_markup=InlineKeyboardMarkup(back),
+                            parse_mode=ParseMode.HTML,
+                            timeout=TIMEOUT)
+
+    selected(bot)
+
+
+@game_locales
+def status_update(bot, update):
+    """Remove player from game if user leaves the group"""
+    chat = update.message.chat
+
+    if update.message.left_chat_member:
+        user = update.message.left_chat_member
+
+        try:
+            gm.leave_game(user, chat)
+            game = gm.player_for_user_in_chat(user, chat).game
+
+        except NoGameInChatError:
+            pass
+        except NotEnoughPlayersError:
+            gm.end_game(chat, user)
+            send_async(bot, chat.id, text=__("Game ended!",
+                                             multi=game.translate))
+        else:
+            send_async(bot, chat.id, text=__("Removing {name} from the game",
+                                             multi=game.translate)
+                       .format(name=display_name(user)))
+
+
+@game_locales
+@user_locale
+def start_game(bot, update, args):
+    """Handler for the /start command"""
+
+    if update.message.chat.type != 'private':
+        chat = update.message.chat
+
+        try:
+            game = gm.chatid_games[chat.id][-1]
+        except (KeyError, IndexError):
+            send_async(bot, chat.id,
+                       text=_("There is no game running in this chat. Create "
+                              "a new one with /new"))
+            return
+
+        if game.started:
+            send_async(bot, chat.id, text=_("The game has already started"))
+
+        elif len(game.players) < 2:
+            send_async(bot, chat.id,
+                       text=_("At least two players must /join the game "
+                              "before you can start it"))
+
+        else:
+            game.play_card(game.last_card)
+            game.started = True
+
+            first_message = (
+                __("First player: {name}\n"
+                   "Use /close to stop people from joining the game.\n"
+                   "Enable multi-translations with /enable_translations",
+                   multi=game.translate)
+                .format(name=display_name(game.current_player.user)))
+
+            @run_async
+            def send_first():
+                """Send the first card and player"""
+
+                bot.sendSticker(chat.id,
+                                sticker=c.STICKERS[str(game.last_card)],
+                                timeout=TIMEOUT)
+
+                bot.sendMessage(chat.id,
+                                text=first_message,
+                                timeout=TIMEOUT)
+
+            send_first()
+
+    elif len(args) and args[0] == 'select':
+        players = gm.userid_players[update.message.from_user.id]
+
+        groups = list()
+        for player in players:
+            title = player.game.chat.title
+
+            if player is gm.userid_current[update.message.from_user.id]:
+                title = '- %s -' % player.game.chat.title
+
+            groups.append(
+                [InlineKeyboardButton(text=title,
+                                      callback_data=str(player.game.chat.id))]
+            )
+
+        send_async(bot, update.message.chat_id,
+                   text=_('Please select the group you want to play in.'),
+                   reply_markup=InlineKeyboardMarkup(groups))
+
+    else:
+        help(bot, update)
+
+
+@user_locale
+def close_game(bot, update):
+    """Handler for the /close command"""
+    chat = update.message.chat
+    user = update.message.from_user
+    games = gm.chatid_games.get(chat.id)
+
+    if not games:
+        send_async(bot, chat.id,
+                   text=_("There is no running game in this chat."))
+        return
+
+    game = games[-1]
+
+    if game.owner.id == user.id:
+        game.open = False
+        send_async(bot, chat.id, text=_("Closed the lobby. "
+                                        "No more players can join this game."))
+        return
+
+    else:
+        send_async(bot, chat.id,
+                   text=_("Only the game creator ({name}) can do that.")
+                   .format(name=game.owner.first_name),
+                   reply_to_message_id=update.message.message_id)
+        return
+
+
+@user_locale
+def open_game(bot, update):
+    """Handler for the /open command"""
+    chat = update.message.chat
+    user = update.message.from_user
+    games = gm.chatid_games.get(chat.id)
+
+    if not games:
+        send_async(bot, chat.id,
+                   text=_("There is no running game in this chat."))
+        return
+
+    game = games[-1]
+
+    if game.owner.id == user.id:
+        game.open = True
+        send_async(bot, chat.id, text=_("Opened the lobby. "
+                                        "New players may /join the game."))
+        return
+    else:
+        send_async(bot, chat.id,
+                   text=_("Only the game creator ({name}) can do that")
+                   .format(name=game.owner.first_name),
+                   reply_to_message_id=update.message.message_id)
+        return
+
+
+@user_locale
+def enable_translations(bot, update):
+    """Handler for the /enable_translations command"""
+    chat = update.message.chat
+    user = update.message.from_user
+    games = gm.chatid_games.get(chat.id)
+
+    if not games:
+        send_async(bot, chat.id,
+                   text=_("There is no running game in this chat."))
+        return
+
+    game = games[-1]
+
+    if game.owner.id == user.id:
+        game.translate = True
+        send_async(bot, chat.id, text=_("Enabled multi-translations. "
+                                        "Disable with /disable_translations"))
+        return
+
+    else:
+        send_async(bot, chat.id,
+                   text=_("Only the game creator ({name}) can do that")
+                   .format(name=game.owner.first_name),
+                   reply_to_message_id=update.message.message_id)
+        return
+
+
+@user_locale
+def disable_translations(bot, update):
+    """Handler for the /disable_translations command"""
+    chat = update.message.chat
+    user = update.message.from_user
+    games = gm.chatid_games.get(chat.id)
+
+    if not games:
+        send_async(bot, chat.id,
+                   text=_("There is no running game in this chat."))
+        return
+
+    game = games[-1]
+
+    if game.owner.id == user.id:
+        game.translate = False
+        send_async(bot, chat.id, text=_("Disabled multi-translations. "
+                                        "Enable them again with "
+                                        "/enable_translations"))
+        return
+
+    else:
+        send_async(bot, chat.id,
+                   text=_("Only the game creator ({name}) can do that")
+                   .format(name=game.owner.first_name),
+                   reply_to_message_id=update.message.message_id)
+        return
+
+
+@game_locales
+@user_locale
+def skip_player(bot, update):
+    """Handler for the /skip command"""
+    chat = update.message.chat
+    user = update.message.from_user
+
+    player = gm.player_for_user_in_chat(user, chat)
+    if not player:
+        send_async(bot, chat.id,
+                   text=_("You are not playing in a game in this chat."))
+        return
+
+    game = player.game
+    skipped_player = game.current_player
+    next_player = game.current_player.next
+
+    started = skipped_player.turn_started
+    now = datetime.now()
+    delta = (now - started).seconds
+
+    if delta < skipped_player.waiting_time:
+        n = skipped_player.waiting_time - delta
+        send_async(bot, chat.id,
+                   text=_("Please wait {time} second",
+                          "Please wait {time} seconds",
+                          n)
+                   .format(time=n),
+                   reply_to_message_id=update.message.message_id)
+
+    elif skipped_player.waiting_time > 0:
+        skipped_player.anti_cheat += 1
+        skipped_player.waiting_time -= 30
+        try:
+            skipped_player.draw()
+        except DeckEmptyError:
+            pass
+
+        n = skipped_player.waiting_time
+        send_async(bot, chat.id,
+                   text=__("Waiting time to skip this player has "
+                           "been reduced to {time} second.\n"
+                           "Next player: {name}",
+                           "Waiting time to skip this player has "
+                           "been reduced to {time} seconds.\n"
+                           "Next player: {name}",
+                           n,
+                           multi=game.translate)
+                   .format(time=n,
+                           name=display_name(next_player.user)))
+        game.turn()
+
+    else:
+        try:
+            gm.leave_game(skipped_player.user, chat)
+            send_async(bot, chat.id,
+                       text=__("{name1} was skipped four times in a row "
+                               "and has been removed from the game.\n"
+                               "Next player: {name2}", multi=game.translate)
+                       .format(name1=display_name(skipped_player.user),
+                               name2=display_name(next_player.user)))
+
+        except NotEnoughPlayersError:
+            send_async(bot, chat.id,
+                       text=__("{name} was skipped four times in a row "
+                               "and has been removed from the game.\n"
+                               "The game ended.", multi=game.translate)
+                       .format(name=display_name(skipped_player.user)))
+
+            gm.end_game(chat.id, skipped_player.user)
+
+
+@game_locales
+@user_locale
+def reply_to_query(bot, update):
+    """
+    Handler for inline queries.
+    Builds the result list for inline queries and answers to the client.
+    """
+    results = list()
+    switch = None
+
+    try:
+        user_id = update.inline_query.from_user.id
+        players = gm.userid_players[user_id]
+        player = gm.userid_current[user_id]
+        game = player.game
+    except KeyError:
+        add_no_game(results)
+    else:
+        if not game.started:
+            add_not_started(results)
+
+        elif user_id == game.current_player.user.id:
+            if game.choosing_color:
+                add_choose_color(results, game)
+                add_other_cards(player, results, game)
+            else:
+                if not player.drew:
+                    add_draw(player, results)
+
+                else:
+                    add_pass(results, game)
+
+                if game.last_card.special == c.DRAW_FOUR and game.draw_counter:
+                    add_call_bluff(results, game)
+
+                playable = player.playable_cards()
+                added_ids = list()  # Duplicates are not allowed
+
+                for card in sorted(player.cards):
+                    add_card(game, card, results,
+                             can_play=(card in playable and
+                                            str(card) not in added_ids))
+                    added_ids.append(str(card))
+
+                add_gameinfo(game, results)
+
+        elif user_id != game.current_player.user.id or not game.started:
+            for card in sorted(player.cards):
+                add_card(game, card, results, can_play=False)
+
+        else:
+            add_gameinfo(game, results)
+
+        for result in results:
+            result.id += ':%d' % player.anti_cheat
+
+        if players and game and len(players) > 1:
+            switch = _('Current game: {game}').format(game=game.chat.title)
+
+    answer_async(bot, update.inline_query.id, results, cache_time=0,
+                 switch_pm_text=switch, switch_pm_parameter='select')
+
+
+@game_locales
+@user_locale
+def process_result(bot, update):
+    """
+    Handler for chosen inline results.
+    Checks the players actions and acts accordingly.
+    """
+    try:
+        user = update.chosen_inline_result.from_user
+        player = gm.userid_current[user.id]
+        game = player.game
+        result_id = update.chosen_inline_result.result_id
+        chat = game.chat
+    except (KeyError, AttributeError):
+        return
+
+    logger.debug("Selected result: " + result_id)
+
+    result_id, anti_cheat = result_id.split(':')
+    last_anti_cheat = player.anti_cheat
+    player.anti_cheat += 1
+
+    if result_id in ('hand', 'gameinfo', 'nogame'):
+        return
+    elif len(result_id) == 36:  # UUID result
+        return
+    elif int(anti_cheat) != last_anti_cheat:
+        send_async(bot, chat.id,
+                   text=__("Cheat attempt by {name}", multi=game.translate)
+                   .format(name=display_name(player.user)))
+        return
+    elif result_id == 'call_bluff':
+        reset_waiting_time(bot, player)
+        do_call_bluff(bot, player)
+    elif result_id == 'draw':
+        reset_waiting_t
