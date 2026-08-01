@@ -37,6 +37,15 @@ WILD_LABELS = {
     "artidort": "JOKER +4",
 }
 
+DECK_BACK_CODE = "deste"
+
+COLOR_NAME_TR = {
+    "kirmizi": "Kırmızı",
+    "yesil": "Yeşil",
+    "mavi": "Mavi",
+    "sari": "Sarı",
+}
+
 
 def card_image_url(card_code: str) -> str:
     """Kart kodundan gorselin (raw) URL'ini uretir."""
