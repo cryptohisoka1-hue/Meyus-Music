@@ -1,47 +1,33 @@
-from telegram import Bot
+"""
+Kart gorsellerini foto olarak indirip yukleme yerine, Telegram'in kendi
+sticker paketini (ornegin 'classic_colorblind') kullanmak icin yardimci
+modul. Sticker'lar Telegram sunucularinda zaten hazir oldugundan hicbir
+indirme/yukleme/depo-sohbet ihtiyaci olmadan aninda kullanilabilir.
+"""
 
-UNO_STICKER_SET = "UnoCardsDeck"
+import asyncio
 
-_stickers = {}
-_loaded = False
-
-
-async def load_uno_stickers(bot: Bot):
-    """
-    UnoCardsDeck paketindeki stickerları Telegram'dan alır.
-    Sticker sırası, ALL_CARD_CODES sırasıyla eşleşmelidir.
-    """
-    global _stickers, _loaded
-
-    if _loaded:
-        return _stickers
-
-    sticker_set = await bot.get_sticker_set(UNO_STICKER_SET)
-
-    if not sticker_set or not sticker_set.stickers:
-        raise RuntimeError("UnoCardsDeck sticker paketi bulunamadı.")
-
-    _stickers.clear()
-
-    for index, sticker in enumerate(sticker_set.stickers):
-        _stickers[index] = sticker.file_id
-
-    _loaded = True
-
-    print(f"✅ UnoCardsDeck yüklendi: {len(_stickers)} sticker")
-
-    return _stickers
+_sticker_set_cache = None
+_lock = asyncio.Lock()
 
 
-async def get_card_sticker(bot: Bot, card_index: int):
-    if not _loaded:
-        await load_uno_stickers(bot)
+async def get_sticker_set(bot, set_name: str):
+    global _sticker_set_cache
+    if _sticker_set_cache is not None:
+        return _sticker_set_cache
+    async with _lock:
+        if _sticker_set_cache is None:
+            _sticker_set_cache = await bot.get_sticker_set(set_name)
+    return _sticker_set_cache
 
-    return _stickers.get(card_index)
 
-
-async def get_all_stickers(bot: Bot):
-    if not _loaded:
-        await load_uno_stickers(bot)
-
-    return _stickers
+async def get_card_sticker_file_id(bot, set_name: str, card_code: str, mapping: dict):
+    """mapping: {card_code: sticker_index} seklinde, cards_data/card_sticker_map'ten gelir."""
+    idx = mapping.get(card_code)
+    if idx is None:
+        return None
+    sticker_set = await get_sticker_set(bot, set_name)
+    if idx >= len(sticker_set.stickers):
+        return None
+    return sticker_set.stickers[idx].file_id
+    
