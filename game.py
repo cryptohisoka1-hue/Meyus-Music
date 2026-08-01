@@ -41,10 +41,11 @@ def is_valid_move(card, top_card, chosen_color=None):
 
 class UnoGame:
     def __init__(self):
-        self.players = []
+        self.players = []           # user_id listesi
+        self.player_names = {}      # {str(user_id): first_name}
         self.deck = create_deck()
         self.discard = []
-        self.hands = {}
+        self.hands = {}             # {user_id: [kartlar]}
         self.turn = 0
         self.direction = 1
         self.chosen_color = None
@@ -55,8 +56,8 @@ class UnoGame:
         while self.discard[-1]['color'] == 'wild':
             self.deck.insert(0, self.discard.pop())
             self.discard.append(self.deck.pop())
-        for player in self.players:
-            self.hands[player] = [self.deck.pop() for _ in range(7)]
+        for player_id in self.players:
+            self.hands[player_id] = [self.deck.pop() for _ in range(7)]
         self.started = True
 
     def current_player(self):
@@ -80,9 +81,10 @@ class UnoGame:
     def serialize(self):
         return {
             'players': self.players,
+            'player_names': self.player_names,
             'deck': self.deck,
             'discard': self.discard,
-            'hands': self.hands,
+            'hands': {str(k): v for k, v in self.hands.items()},
             'turn': self.turn,
             'direction': self.direction,
             'chosen_color': self.chosen_color,
@@ -93,9 +95,11 @@ class UnoGame:
     def deserialize(cls, data):
         game = cls()
         game.players = data['players']
+        game.player_names = data.get('player_names', {})
         game.deck = data['deck']
         game.discard = data['discard']
-        game.hands = data['hands']
+        # hands key'leri string olarak saklandı, int'e çevir
+        game.hands = {int(k): v for k, v in data['hands'].items()}
         game.turn = data['turn']
         game.direction = data['direction']
         game.chosen_color = data.get('chosen_color')
@@ -105,4 +109,15 @@ class UnoGame:
 
 with open('/mnt/agents/output/game.py', 'w', encoding='utf-8') as f:
     f.write(game_content)
-print("✅ game.py")
+print("✅ game.py (player_names eklendi)")
+
+# requirements.txt
+req_content = '''python-telegram-bot>=20.0
+'''
+with open('/mnt/agents/output/requirements.txt', 'w', encoding='utf-8') as f:
+    f.write(req_content)
+print("✅ requirements.txt")
+
+print("\n" + "="*50)
+print("TÜM DOSYALAR BAŞARIYLA OLUŞTURULDU!")
+print("="*50)
