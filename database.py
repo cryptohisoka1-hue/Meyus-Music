@@ -1,125 +1,179 @@
-import sqlite3
-from pathlib import Path
+--
+-- PostgreSQL database dump
+--
 
-DB_FOLDER = Path("data")
-DB_FOLDER.mkdir(exist_ok=True)
+-- Dumped from database version 13.2
+-- Dumped by pg_dump version 13.2
 
-DB_PATH = DB_FOLDER / "uno.db"
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
 
+SET default_tablespace = '';
 
-class Database:
+SET default_table_access_method = heap;
 
-    def __init__(self):
-        self.conn = sqlite3.connect(DB_PATH)
-        self.cursor = self.conn.cursor()
-        self.create_tables()
+--
+-- Name: uno_joins; Type: TABLE; Schema: public; Owner: -
+--
 
-    def create_tables(self):
-
-        self.cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users(
-            user_id INTEGER PRIMARY KEY,
-            first_name TEXT,
-            username TEXT,
-            coins INTEGER DEFAULT 100,
-            wins INTEGER DEFAULT 0,
-            games INTEGER DEFAULT 0,
-            level INTEGER DEFAULT 1,
-            xp INTEGER DEFAULT 0
-        )
-        """)
-
-        self.conn.commit()
-
-    # ---------------- USER ----------------
-
-    def add_user(self, user_id, first_name, username):
-
-        self.cursor.execute("""
-        INSERT OR IGNORE INTO users
-        (user_id, first_name, username)
-        VALUES (?, ?, ?)
-        """, (user_id, first_name, username))
-
-        self.conn.commit()
-
-    def get_user(self, user_id):
-
-        self.cursor.execute("""
-        SELECT * FROM users
-        WHERE user_id=?
-        """, (user_id,))
-
-        return self.cursor.fetchone()
-
-    # ---------------- COIN ----------------
-
-    def add_coin(self, user_id, amount):
-
-        self.cursor.execute("""
-        UPDATE users
-        SET coins = coins + ?
-        WHERE user_id=?
-        """, (amount, user_id))
-
-        self.conn.commit()
-
-    def remove_coin(self, user_id, amount):
-
-        self.cursor.execute("""
-        UPDATE users
-        SET coins = coins - ?
-        WHERE user_id=?
-        """, (amount, user_id))
-
-        self.conn.commit()
-
-    # ---------------- XP ----------------
-
-    def add_xp(self, user_id, amount):
-
-        self.cursor.execute("""
-        UPDATE users
-        SET xp = xp + ?
-        WHERE user_id=?
-        """, (amount, user_id))
-
-        self.conn.commit()
-
-    # ---------------- GAME ----------------
-
-    def add_game(self, user_id):
-
-        self.cursor.execute("""
-        UPDATE users
-        SET games = games + 1
-        WHERE user_id=?
-        """, (user_id,))
-
-        self.conn.commit()
-
-    def add_win(self, user_id):
-
-        self.cursor.execute("""
-        UPDATE users
-        SET wins = wins + 1
-        WHERE user_id=?
-        """, (user_id,))
-
-        self.conn.commit()
-
-    # ---------------- LEADERBOARD ----------------
-
-    def leaderboard(self):
-
-        self.cursor.execute("""
-        SELECT first_name,wins
-        FROM users
-        ORDER BY wins DESC
-        LIMIT 10
-        """)
-
-        return self.cursor.fetchall()
+CREATE TABLE public.uno_joins (
+    id integer NOT NULL,
+    room_id integer,
+    user_id integer,
+    player_number integer
+);
 
 
-db = Database()
+--
+-- Name: uno_joins_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.uno_joins_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: uno_joins_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.uno_joins_id_seq OWNED BY public.uno_joins.id;
+
+
+--
+-- Name: uno_rooms; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.uno_rooms (
+    id integer NOT NULL,
+    game_pickle bytea,
+    draw_4_on_draw_4 text DEFAULT 'false'::text NOT NULL,
+    draw_2_on_draw_4 text DEFAULT 'false'::text NOT NULL,
+    disable_call_bluff text DEFAULT 'false'::text NOT NULL,
+    allow_play_non_drawn_cards text DEFAULT 'false'::text NOT NULL,
+    allow_pass_without_draw text DEFAULT 'false'::text NOT NULL,
+    draw_pass_behavior text DEFAULT 'single_draw'::text NOT NULL,
+    allow_highlight_playable_cards text DEFAULT 'false'::text NOT NULL
+);
+
+
+--
+-- Name: uno_rooms_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.uno_rooms_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: uno_rooms_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.uno_rooms_id_seq OWNED BY public.uno_rooms.id;
+
+
+--
+-- Name: uno_users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.uno_users (
+    id integer NOT NULL,
+    user_id integer,
+    style text DEFAULT 'short'::text NOT NULL,
+    show_play_number text DEFAULT 'false'::text NOT NULL
+);
+
+
+--
+-- Name: uno_users_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.uno_users_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: uno_users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.uno_users_id_seq OWNED BY public.uno_users.id;
+
+
+--
+-- Name: uno_joins id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.uno_joins ALTER COLUMN id SET DEFAULT nextval('public.uno_joins_id_seq'::regclass);
+
+
+--
+-- Name: uno_rooms id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.uno_rooms ALTER COLUMN id SET DEFAULT nextval('public.uno_rooms_id_seq'::regclass);
+
+
+--
+-- Name: uno_users id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.uno_users ALTER COLUMN id SET DEFAULT nextval('public.uno_users_id_seq'::regclass);
+
+
+--
+-- Name: uno_joins uno_joins_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.uno_joins
+    ADD CONSTRAINT uno_joins_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: uno_rooms uno_rooms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.uno_rooms
+    ADD CONSTRAINT uno_rooms_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: uno_users uno_users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.uno_users
+    ADD CONSTRAINT uno_users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: uno_users uq_uno_users_user_id; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.uno_users
+    ADD CONSTRAINT uq_uno_users_user_id UNIQUE (user_id);
+
+
+--
+-- PostgreSQL database dump complete
+--
