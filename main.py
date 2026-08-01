@@ -1,4 +1,4 @@
-import logging
+'''import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from config import BOT_TOKEN
@@ -10,6 +10,7 @@ logging.basicConfig(level=logging.INFO)
 db = Database()
 games = {}
 
+
 def get_game(chat_id):
     if chat_id in games:
         return games[chat_id]
@@ -20,12 +21,15 @@ def get_game(chat_id):
         return game
     return None
 
+
 def save_game(chat_id):
     if chat_id in games:
         db.save_state(chat_id, games[chat_id].serialize())
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Uno bot hazır. /newgame ile oyun başlat.")
+
 
 async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -34,6 +38,7 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     games[chat_id] = game
     save_game(chat_id)
     await update.message.reply_text("Yeni oyun oluşturuldu. Diğer oyuncular /join ile katılabilir.")
+
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -46,6 +51,7 @@ async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         game.players.append(user)
         save_game(chat_id)
     await update.message.reply_text(f"{user} oyuna katıldı.")
+
 
 async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -61,6 +67,7 @@ async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Oyun başladı. İlk kart: {game.card_text(game.discard[-1])}")
     await send_turn(update, context, chat_id)
 
+
 async def send_turn(update, context, chat_id):
     game = get_game(chat_id)
     player = game.current_player()
@@ -70,6 +77,7 @@ async def send_turn(update, context, chat_id):
         text=text,
         reply_markup=hand_keyboard(game.hands[player])
     )
+
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -137,6 +145,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"{player} kart oynadı: {game.card_text(card)}")
         await send_turn(update, context, chat_id)
 
+
 def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN tanımlı değil.")
@@ -148,5 +157,12 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.run_polling()
 
+
 if __name__ == "__main__":
     main()
+'''
+
+with open('/mnt/agents/output/main.py', 'w', encoding='utf-8') as f:
+    f.write(code)
+
+print("Dosya başarıyla oluşturuldu.")
