@@ -1,203 +1,152 @@
 import logging
-from collections import defaultdict
-from random import shuffle
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-
-TOKEN = "YOUR_BOT_TOKEN"
+from config import BOT_TOKEN
+from database import Database
+from game import UnoGame
+from callbacks import hand_keyboard, render_hand
 
 logging.basicConfig(level=logging.INFO)
-
+db = Database()
 games = {}
 
-COLORS = ["R", "G", "B", "Y"]
-COLOR_EMOJI = {"R": "🟥", "G": "🟩", "B": "🟦", "Y": "🟨"}
+def get_game(chat_id):
+    if chat_id in games:
+        return games[chat_id]
+    raw = db.load_state(chat_id)
+    if raw:
+        game = UnoGame.deserialize(raw)
+        games[chat_id] = game
+        return game
+    return None
 
-def build_deck():
-    deck = []
-    for color in COLORS:
-        for n in range(0, 10):
-            deck.append(f"{color}{n}")
-            if n != 0:
-                deck.append(f"{color}{n}")
-        for card in ["SKIP", "REVERSE", "DRAW2"]:
-            deck.extend([f"{color}{card}", f"{color}{card}"])
-    wilds = ["WILD", "WILD4"]
-    for w in wilds:
-        deck.extend([w] * 4)
-    shuffle(deck)
-    return deck
-
-def card_text(card):
-    if card.startswith(tuple(COLORS)):
-        color = card[0]
-        value = card[1:]
-        if value.isdigit():
-            return f"{COLOR_EMOJI[color]} {value}"
-        if value == "SKIP":
-            return f"{COLOR_EMOJI[color]} Skip"
-        if value == "REVERSE":
-            return f"{COLOR_EMOJI[color]} Reverse"
-        if value == "DRAW2":
-            return f"{COLOR_EMOJI[color]} +2"
-    if card == "WILD":
-        return "🃏 Wild"
-    if card == "WILD4":
-        return "🃏 Wild +4"
-    return card
-
-def can_play(card, top_card, chosen_color=None):
-    if card in ["WILD", "WILD4"]:
-        return True
-    if top_card in ["WILD", "WILD4"]:
-        return card[0] == chosen_color
-    return card[0] == top_card[0] or card[1:] == top_card[1:]
-
-def init_game(chat_id, players):
-    deck = build_deck()
-    hands = {p: [deck.pop() for _ in range(7)] for p in players}
-    top = deck.pop()
-    while top in ["WILD", "WILD4"]:
-        deck.insert(0, top)
-        shuffle(deck)
-        top = deck.pop()
-    games[chat_id] = {
-        "players": players,
-        "hands": hands,
-        "deck": deck,
-        "discard": [top],
-        "turn": 0,
-        "direction": 1,
-        "chosen_color": None,
-        "started": True
-    }
-
-def current_player(game):
-    return game["players"][game["turn"]]
-
-def next_turn(game, step=1):
-    game["turn"] = (game["turn"] + step * game["direction"]) % len(game["players"])
+def save_game(chat_id):
+    if chat_id in games:
+        db.save_state(chat_id, games[chat_id].serialize())
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Uno bot hazır. /newgame ile oyun başlat.")
 
 async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    user = update.effective_user.first_name
-    games[chat_id] = {
-        "players": [user],
-        "hands": defaultdict(list),
-        "deck": [],
-        "discard": [],
-        "turn": 0,
-        "direction": 1,
-        "chosen_color": None,
-        "started": False
-    }
-    await update.message.reply_text(
-        "Yeni oyun oluşturuldu. Oyuncuları eklemek için /join kullan. Başlatmak için /begin."
-    )
+    game = UnoGame()
+    game.players.append(update.effective_user.first_name)
+    games[chat_id] = game
+    save_game(chat_id)
+    await update.message.reply_text("Yeni oyun oluşturuldu. Diğer oyuncular /join ile katılabilir.")
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    user = update.effective_user.first_name
-    if chat_id not in games:
+    game = get_game(chat_id)
+    if not game:
         await update.message.reply_text("Önce /newgame ile oyun başlat.")
         return
-    game = games[chat_id]
-    if user not in game["players"]:
-        game["players"].append(user)
+    user = update.effective_user.first_name
+    if user not in game.players:
+        game.players.append(user)
+        save_game(chat_id)
     await update.message.reply_text(f"{user} oyuna katıldı.")
 
 async def begin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    if chat_id not in games:
-        await update.message.reply_text("Önce /newgame ile oyun başlat.")
+    game = get_game(chat_id)
+    if not game:
+        await update.message.reply_text("Önce oyun oluştur.")
         return
-    game = games[chat_id]
-    if len(game["players"]) < 2:
-        await update.message.reply_text("En az 2 oyuncu gerekir.")
+    if len(game.players) < 2:
+        await update.message.reply_text("En az 2 oyuncu gerekli.")
         return
-    init_game(chat_id, game["players"])
-    await update.message.reply_text(f"Oyun başladı. İlk kart: {card_text(games[chat_id]['discard'][-1])}")
-    await send_hand(context, chat_id, current_player(games[chat_id]))
+    game.start()
+    save_game(chat_id)
+    await update.message.reply_text(f"Oyun başladı. İlk kart: {game.card_text(game.discard[-1])}")
+    await send_turn(update, context, chat_id)
 
-async def send_hand(context, chat_id, player):
-    game = games[chat_id]
-    hand = game["hands"][player]
-    buttons = []
-    for i, card in enumerate(hand):
-        buttons.append([InlineKeyboardButton(card_text(card), callback_data=f"play:{i}")])
-    buttons.append([InlineKeyboardButton("Kart çek", callback_data="draw")])
-    text = f"Sıra: {player}
-Üst kart: {card_text(game['discard'][-1])}
-Elin: " + ", ".join(card_text(c) for c in hand)
-    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(buttons))
+async def send_turn(update, context, chat_id):
+    game = get_game(chat_id)
+    player = game.current_player()
+    text = render_hand(game, player)
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=hand_keyboard(game.hands[player])
+    )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     chat_id = update.effective_chat.id
-    if chat_id not in games:
+    game = get_game(chat_id)
+    if not game:
         await query.edit_message_text("Aktif oyun yok.")
         return
-    game = games[chat_id]
-    player = current_player(game)
+
+    player = game.current_player()
     user = query.from_user.first_name
     if user != player:
         await query.answer("Sıra sende değil.", show_alert=True)
         return
 
-    data = query.data
-    if data == "draw":
-        card = game["deck"].pop()
-        game["hands"][player].append(card)
-        next_turn(game)
-        await query.edit_message_text(f"{player} kart çekti: {card_text(card)}")
-        await send_hand(context, chat_id, current_player(game))
+    if query.data == "draw":
+        card = game.deck.pop()
+        game.hands[player].append(card)
+        game.next_turn()
+        save_game(chat_id)
+        await query.edit_message_text(f"{player} kart çekti: {game.card_text(card)}")
+        await send_turn(update, context, chat_id)
         return
 
-    if data.startswith("play:"):
-        idx = int(data.split(":")[1])
-        hand = game["hands"][player]
+    if query.data.startswith("play:"):
+        idx = int(query.data.split(":")[1])
+        hand = game.hands[player]
         if idx >= len(hand):
             return
         card = hand[idx]
-        top = game["discard"][-1]
-        if not can_play(card, top, game["chosen_color"]):
+        if not game.can_play(card):
             await query.answer("Bu kart oynanamaz.", show_alert=True)
             return
+
         hand.pop(idx)
-        game["discard"].append(card)
-        game["chosen_color"] = None
+        game.discard.append(card)
 
         if card == "REVERSE":
-            game["direction"] *= -1
+            game.direction *= -1
         elif card == "SKIP":
-            next_turn(game)
+            game.next_turn()
         elif card == "DRAW2":
-            next_turn(game)
-            target = current_player(game)
+            game.next_turn()
+            target = game.current_player()
             for _ in range(2):
-                game["hands"][target].append(game["deck"].pop())
+                game.hands[target].append(game.deck.pop())
         elif card == "WILD":
-            game["chosen_color"] = "R"
+            game.chosen_color = "R"
         elif card == "WILD4":
-            game["chosen_color"] = "R"
-            next_turn(game)
-            target = current_player(game)
+            game.chosen_color = "R"
+            game.next_turn()
+            target = game.current_player()
             for _ in range(4):
-                game["hands"][target].append(game["deck"].pop())
+                game.hands[target].append(game.deck.pop())
 
         if len(hand) == 0:
             await query.edit_message_text(f"🎉 {player} kazandı!")
-            del games[chat_id]
+            db.delete_state(chat_id)
+            games.pop(chat_id, None)
             return
 
-        next_turn(game)
-        await query.edit_message_text(f"{player} kart oynadı: {card_text(card)}")
-        await send_hand(context, chat_id, current_player(game))
+        game.next_turn()
+        save_game(chat_id)
+        await query.edit_message_text(f"{player} kart oynadı: {game.card_text(card)}")
+        await send_turn(update, context, chat_id)
 
 def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_han
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN tanımlı değil.")
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("newgame", newgame))
+    app.add_handler(CommandHandler("join", join))
+    app.add_handler(CommandHandler("begin", begin))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
