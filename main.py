@@ -14,6 +14,7 @@ from telegram import (
     InlineQueryResultCachedPhoto,
     InlineQueryResultArticle,
     InputTextMessageContent,
+    InlineQueryResultsButton,
 )
 from telegram.ext import (
     Application,
@@ -312,7 +313,11 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not game:
         await inline_query.answer(
-            [], switch_pm_text="Aktif bir oyunda değilsin", switch_pm_parameter="no_game",
+            [],
+            button=InlineQueryResultsButton(
+                text="Aktif bir oyunda değilsin",
+                start_parameter="no_game",
+            ),
             cache_time=1, is_personal=True,
         )
         return
@@ -586,4 +591,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                
+        
