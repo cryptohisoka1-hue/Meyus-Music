@@ -2,11 +2,12 @@ import uuid
 
 from game import *
 from cards_data import card_image_url, card_display_label, DECK_BACK_CODE, COLOR_NAME_TR, COLOR_LABELS
+from card_cache import get_card_file_id
 from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    InlineQueryResultPhoto,
+    InlineQueryResultCachedPhoto,
     InlineQueryResultArticle,
     InputTextMessageContent,
 )
@@ -146,9 +147,10 @@ async def _do_start_game(context, chat_id):
     t_card = top_card(chat_id)
     color_tr = COLOR_NAME_TR.get(game["top_color"], game["top_color"])
 
+    file_id = await get_card_file_id(context.bot, t_card, chat_id)
     await context.bot.send_photo(
         chat_id,
-        photo=card_image_url(t_card),
+        photo=file_id,
         caption=(
             "🚀 <b>Oyun başladı!</b>\n\n"
             f"🎨 Başlangıç rengi: <b>{color_tr}</b>\n\n"
@@ -297,28 +299,32 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     legal = legal_cards_for(chat_id, user.id)
     results = []
     for idx, card_code in enumerate(legal):
-        url = card_image_url(card_code)
+        try:
+            file_id = await get_card_file_id(context.bot, card_code, chat_id)
+        except Exception:
+            continue
         results.append(
-            InlineQueryResultPhoto(
+            InlineQueryResultCachedPhoto(
                 id=f"{card_code}#{idx}",
-                photo_url=url,
-                thumbnail_url=url,
+                photo_file_id=file_id,
                 title=f"🎴 {card_display_label(card_code)}",
                 description="Oynamak için dokun",
             )
         )
 
     # Kart cekme secenegi her zaman mevcut
-    deck_url = card_image_url(DECK_BACK_CODE)
-    results.append(
-        InlineQueryResultPhoto(
-            id="draw",
-            photo_url=deck_url,
-            thumbnail_url=deck_url,
-            title="🂠 Kart Çek",
-            description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
+    try:
+        deck_file_id = await get_card_file_id(context.bot, DECK_BACK_CODE, chat_id)
+        results.append(
+            InlineQueryResultCachedPhoto(
+                id="draw",
+                photo_file_id=deck_file_id,
+                title="🂠 Kart Çek",
+                description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
+            )
         )
-    )
+    except Exception:
+        pass
 
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
