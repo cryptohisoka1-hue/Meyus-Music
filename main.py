@@ -6,6 +6,7 @@ from cards_data import (
     COLOR_NAME_TR, COLOR_LABELS, ALL_CARD_CODES,
 )
 from card_cache import get_card_file_id, prewarm_all_cards
+from telegram import InlineQueryResultCachedPhoto
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext
 
