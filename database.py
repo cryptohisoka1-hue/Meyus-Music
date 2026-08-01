@@ -1,4 +1,4 @@
-'''import sqlite3
+import sqlite3
 import json
 from config import DATABASE_NAME
 
@@ -28,7 +28,10 @@ class Database:
 
     def load_state(self, game_id):
         cursor = self.conn.cursor()
-        cursor.execute("SELECT state FROM games WHERE game_id = ?", (str(game_id),))
+        cursor.execute(
+            "SELECT state FROM games WHERE game_id = ?",
+            (str(game_id),)
+        )
         row = cursor.fetchone()
         if row:
             return json.loads(row[0])
@@ -36,10 +39,8 @@ class Database:
 
     def delete_state(self, game_id):
         cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM games WHERE game_id = ?", (str(game_id),))
+        cursor.execute(
+            "DELETE FROM games WHERE game_id = ?",
+            (str(game_id),)
+        )
         self.conn.commit()
-'''
-
-with open('/mnt/agents/output/database.py', 'w', encoding='utf-8') as f:
-    f.write(database_content)
-print("✅ database.py")
