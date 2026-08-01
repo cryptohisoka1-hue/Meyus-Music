@@ -1,38 +1,49 @@
 import sqlite3
-from config import DB_PATH
+import aiosqlite
+from config import DATABASE_NAME
 
-class Database:
-    def __init__(self, path=DB_PATH):
-        self.conn = sqlite3.connect(path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.create_tables()
-
-    def create_tables(self):
-        cur = self.conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS game_states (
-                chat_id INTEGER PRIMARY KEY,
-                state ტექಸ್ಟ್
+async def init_db():
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS games (
+                game_id TEXT PRIMARY KEY,
+                deck TEXT,
+                discard_pile TEXT,
+                current_turn INTEGER,
+                direction INTEGER,
+                players TEXT,
+                active BOOLEAN DEFAULT 1
             )
         """)
-        self.conn.commit()
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS players (
+                user_id INTEGER PRIMARY KEY,
+                hand TEXT,
+                game_id TEXT
+            )
+        """)
+        await db.commit()
 
-    def save_state(self, chat_id, state):
-        cur = self.conn.cursor()
-        cur.execute("""
-            INSERT INTO game_states (chat_id, state)
-            VALUES (?, ?)
-            ON CONFLICT(chat_id) DO UPDATE SET state=excluded.state
-        """, (chat_id, state))
-        self.conn.commit()
+async def save_game(game_id, data):
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute("REPLACE INTO games (game_id, deck, discard_pile, current_turn, direction, players, active) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (game_id, data['deck'], data['discard'], data['turn'], data['direction'], str(data['players']), 1))
+        await db.commit()
 
-    def load_state(self, chat_id):
-        cur = self.conn.cursor()
-        cur.execute("SELECT state FROM game_states WHERE chat_id = ?", (chat_id,))
-        row = cur.fetchone()
-        return row["state"] if row else None
+async def get_game(game_id):
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        cursor = await db.execute("SELECT * FROM games WHERE game_id = ?", (game_id,))
+        row = await cursor.fetchone()
+        return row
 
-    def delete_state(self, chat_id):
-        cur = self.conn.cursor()
-        cur.execute("DELETE FROM game_states WHERE chat_id = ?", (chat_id,))
-        self.conn.commit()
+async def add_player(user_id, game_id, hand):
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute("INSERT OR REPLACE INTO players (user_id, hand, game_id) VALUES (?, ?, ?)", (user_id, str(hand), game_id))
+        await db.commit()
+
+async def get_player_hand(user_id):
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        cursor = await db.execute("SELECT hand FROM players WHERE user_id = ?", (user_id,))
+        row = await cursor.fetchone()
+        return eval(row) if row else 
+        
