@@ -48,8 +48,6 @@ async def pas_butonu_tiklandi(update: Update, context: CallbackContext) -> None:
     InlineQueryResultCachedPhoto,
     InlineQueryResultArticle,
     InputTextMessageContent,
-)
-
 from telegram.ext import (
     Application,
     CommandHandler,
