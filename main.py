@@ -355,6 +355,5 @@ def main():
 if __name__ == "__main__":
     main()
 '''
-with open("main.py", "w", encoding="utf-8") as f:
-    f.write(main_content)
-print("✅ main.py")
+if __name__ == "__main__":
+    main()
