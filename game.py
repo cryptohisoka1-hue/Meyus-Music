@@ -55,18 +55,18 @@ def create_game(chat_id, owner_id):
         return False
     games[chat_id] = {
         "owner": owner_id,
-        "players": [],       # [{id, name}]
+        "players": [],
         "deck": [],
-        "discard": [],       # oynanmış kartların yığını (top_card = discard[-1])
-        "hands": {},         # uid -> [card_code, ...]
+        "discard": [],
+        "hands": {},
         "started": False,
-        "turn_order": [],    # [uid, ...]
+        "turn_order": [],
         "turn_index": 0,
         "direction": 1,
-        "top_color": None,   # joker sonrası seçilen renk
-        "pending_wild": None,  # joker oynayıp renk seçmesi beklenen uid
+        "top_color": None,
+        "pending_wild": None,
         "winner": None,
-        "has_drawn": {},     # uid -> bool (bilgi amaçlı, zorunlu değil)
+        "has_drawn": {},
     }
     return True
 
@@ -286,7 +286,7 @@ def draw_card(chat_id, user_id):
 def pass_turn(chat_id, user_id):
     """
     Oyuncu pas geçer.
-    Artık her zaman izinlidir (kart çekmiş olmak zorunlu değil).
+    Sadece kart çektikten sonra geçerlidir.
     """
     game = games.get(chat_id)
     if not game or not game.get("started") or game.get("winner"):
@@ -294,6 +294,10 @@ def pass_turn(chat_id, user_id):
 
     if current_player(chat_id) != user_id:
         return {"ok": False, "reason": "SIRA_DEGIL"}
+
+    # Çekmeden pas geçilemez
+    if not game.get("has_drawn", {}).get(user_id, False):
+        return {"ok": False, "reason": "ONCE_CEK"}
 
     game["has_drawn"][user_id] = False
     _advance_turn(game, steps=1)
