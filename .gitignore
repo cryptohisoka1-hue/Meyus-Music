@@ -2,3 +2,7 @@
 data/*.db
 __pycache__/
 *.pyc
+
+# Railway Volume'da üretilen runtime dosyaları (git'e girmesin)
+data/file_id_cache.json
+*.log
