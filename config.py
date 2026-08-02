@@ -1,6 +1,9 @@
 import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "TOKENINIZI_BURAYA_YAZIN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN ayarlanmamış! Railway Variables'a eklenmeli.")
 
 # Depo sohbeti ID'si (kart önbellekleme için)
 # None bırakırsanız oyun grubu kullanılır
