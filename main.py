@@ -503,6 +503,13 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await finish_game(context, chat_id, user.id)
         return
 
+    if res.get("uno"):
+        await context.bot.send_message(
+            chat_id,
+            f"🔥 <b>UNO!</b> {actor_mention} elinde tek kart kaldı!",
+            parse_mode="HTML",
+        )
+
     if res.get("needs_color"):
         keyboard = [[
             InlineKeyboardButton(f"{COLOR_LABELS[c]} {COLOR_NAME_TR[c]}", callback_data=f"renk:{c}:{user.id}")
