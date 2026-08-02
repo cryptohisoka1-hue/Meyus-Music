@@ -616,8 +616,7 @@ async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 Her an "🎴 Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin.
 Sıra sende olduğunda aynı buton oynanabilir kartları, kart çekmeyi ve
-"pas geç" seçeneğini listeler; seçtiğin işlem otomatik uygulanır ama
-kartın gruba görsel olarak asla gönderilmez.
+"pas geç" seçeneğini listeler; seçtiğin işlem otomatik uygulanır.
 """
     )
 
