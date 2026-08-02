@@ -3,6 +3,5 @@ data/*.db
 __pycache__/
 *.pyc
 
-# Railway Volume'da üretilen runtime dosyaları (git'e girmesin)
-data/file_id_cache.json
-*.log
+# NOT: file_id_cache.json artık repo'da kalacak
+# data/file_id_cache.json   <-- bu satırı SİL veya yoruma al
