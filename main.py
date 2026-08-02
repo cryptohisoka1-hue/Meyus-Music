@@ -6,7 +6,7 @@ from cards_data import (
     card_image_url, card_display_label, DECK_BACK_CODE,
     COLOR_NAME_TR, COLOR_LABELS, ALL_CARD_CODES,
 )
-from card_cache import get_card_file_id, prewarm_all_cards
+from card_cache import get_card_file_id, prewarm_all_cards, get_cached_file_id
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -338,28 +338,58 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
             desc = "👁 Sadece görüntüleme — sıra sende değil"
             placeholder = "👁 Görüntülendi (özel)"
 
-        results.append(
-            InlineQueryResultArticle(
-                id=f"{card_code}#{idx}",
-                title=f"🎴 {card_display_label(card_code)}",
-                description=desc,
-                thumbnail_url=card_image_url(card_code),
-                input_message_content=InputTextMessageContent(placeholder),
-                reply_markup=_EMPTY_MARKUP,
+        # Onbellekte bu kartin Telegram file_id'si varsa (prewarm zaten
+        # yapmis olmali) gorseli Telegram'in kendi sunucusundan, aninda
+        # ve guvenilir sekilde gosteriyoruz. Henuz onbelleklenmemisse dis
+        # URL'e (yavas/limitli olabilen kaynak) hic gitmeden, gorselsiz
+        # (sadece yazili) bir sonuc gosteriyoruz; boylece inline sorgu
+        # yavaslamiyor/kilitlenmiyor.
+        file_id = get_cached_file_id(card_code)
+        if file_id:
+            results.append(
+                InlineQueryResultCachedPhoto(
+                    id=f"{card_code}#{idx}",
+                    photo_file_id=file_id,
+                    title=f"🎴 {card_display_label(card_code)}",
+                    description=desc,
+                    input_message_content=InputTextMessageContent(placeholder),
+                    reply_markup=_EMPTY_MARKUP,
+                )
             )
-        )
+        else:
+            results.append(
+                InlineQueryResultArticle(
+                    id=f"{card_code}#{idx}",
+                    title=f"🎴 {card_display_label(card_code)}",
+                    description=desc,
+                    input_message_content=InputTextMessageContent(placeholder),
+                    reply_markup=_EMPTY_MARKUP,
+                )
+            )
 
     if my_turn:
-        results.append(
-            InlineQueryResultArticle(
-                id="draw",
-                title="🂠 Kart Çek",
-                description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
-                thumbnail_url=card_image_url(DECK_BACK_CODE),
-                input_message_content=InputTextMessageContent("🂠 Kart çekiliyor…"),
-                reply_markup=_EMPTY_MARKUP,
+        deck_file_id = get_cached_file_id(DECK_BACK_CODE)
+        if deck_file_id:
+            results.append(
+                InlineQueryResultCachedPhoto(
+                    id="draw",
+                    photo_file_id=deck_file_id,
+                    title="🂠 Kart Çek",
+                    description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
+                    input_message_content=InputTextMessageContent("🂠 Kart çekiliyor…"),
+                    reply_markup=_EMPTY_MARKUP,
+                )
             )
-        )
+        else:
+            results.append(
+                InlineQueryResultArticle(
+                    id="draw",
+                    title="🂠 Kart Çek",
+                    description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
+                    input_message_content=InputTextMessageContent("🂠 Kart çekiliyor…"),
+                    reply_markup=_EMPTY_MARKUP,
+                )
+            )
         results.append(
             InlineQueryResultArticle(
                 id="pas",
@@ -383,11 +413,15 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Secilen inline mesaji, islem bittikten sonra kisa/notr bir
         # metne cevirir. Boylece kartlar hicbir zaman grupta gorsel
         # olarak asili kalmaz.
-        if inline_message_id:
-            try:
-                await context.bot.edit_message_text(text, inline_message_id=inline_message_id)
-            except Exception:
-                pass
+        if not inline_message_id:
+            print("⚠️ finalize: inline_message_id yok, edit yapılamıyor.")
+            return
+        try:
+            await context.bot.edit_message_text(text, inline_message_id=inline_message_id)
+        except Exception as e:
+            # GEÇICI: hatayı görebilmek için logluyoruz. Sorun bulunduktan
+            # sonra tekrar sessizce gecilebilir (except Exception: pass).
+            print(f"⚠️ finalize edit_message_text hatası (inline_message_id={inline_message_id}): {type(e).__name__}: {e}")
 
     chat_id, game = find_active_game_for_user(user.id)
     if not game:
@@ -596,5 +630,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
