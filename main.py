@@ -168,9 +168,13 @@ async def _do_start_game(context, chat_id):
     t_card = top_card(chat_id)
     color_tr = COLOR_NAME_TR.get(game["top_color"], game["top_color"])
 
-    # Tum kart gorsellerini arka planda onceden cache'le (bir sonraki
-    # @bot sorgusu bekletmeden aninda calissin diye).
-    asyncio.create_task(prewarm_all_cards(context.bot, chat_id, ALL_CARD_CODES))
+    # ÖNCE tüm kartları cache'le, SONRA oyunu başlat
+    # Bu 108 kart için ~4-5 dakika sürebilir (2.5sn aralıkla)
+    await context.bot.send_message(
+        chat_id,
+        "🃏 Kartlar hazırlanıyor, lütfen bekleyin... (ilk kurulum biraz uzun sürebilir)"
+    )
+    await prewarm_all_cards(context.bot, chat_id, ALL_CARD_CODES)
 
     file_id = await get_card_file_id(context.bot, t_card, chat_id)
     await context.bot.send_photo(
@@ -185,6 +189,7 @@ async def _do_start_game(context, chat_id):
         reply_markup=HAND_BUTTON,
     )
     await announce_turn(context, chat_id)
+
 
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
