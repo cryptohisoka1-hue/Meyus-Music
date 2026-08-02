@@ -1,8 +1,7 @@
 import asyncio
-import uuid
 from game import *
 from cards_data import (
-    card_image_url, card_display_label, DECK_BACK_CODE,
+    card_display_label, DECK_BACK_CODE,
     COLOR_NAME_TR, COLOR_LABELS, ALL_CARD_CODES,
 )
 from card_cache import get_card_file_id, prewarm_all_cards
@@ -37,10 +36,20 @@ def player_name(game, uid):
     return "?"
 
 
+def html_escape(value):
+    """Telegram HTML parse_mode için güvenli metin."""
+    value = "" if value is None else str(value)
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
 def mention_html(uid, name):
-    """Kullanıcı adı olmasa bile çalışan, tıklanabilir/bildirim tetikleyen etiket."""
-    safe_name = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    return f'<a href="tg://user?id={uid}">{safe_name}</a>'
+    """Kullanıcı adı olmasa bile çalışan, tıklanabilir etiket."""
+    return f'<a href="tg://user?id={uid}">{html_escape(name)}</a>'
 
 
 HAND_BUTTON = InlineKeyboardMarkup([[InlineKeyboardButton("🎴 Kartlarımı Gör / Oyna",
@@ -96,25 +105,7 @@ async def finish_game(context, chat_id, winner_uid):
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    text = f"""🎮 <b>MEYUS UNO</b>
-
-Merhaba <b>{user.first_name}</b>! 🎉
-Meyus UNO'ya hoş geldin. Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
-
-📜 Komutlar:
-/start - Botu başlat
-/yardim - Yardım
-/oyun - Yeni oyun oluştur
-/katil - Oyuna katıl
-/baslat - Oyunu başlat
-/bitir - Oyunu/lobiyi sonlandır
-/profil - Profilin
-/cek - Kart çek (sıra sendeyken)
-/pas - Pas geç (kart çektikten sonra)
-
-🎴 Her an "Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin (sıra sende değilse sadece görüntülemek için). Sıra sende olduğunda aynı buton oynanabilir kartlarını, kart çekme ve pas geçme seçeneklerini listeler; seçtiğin otomatik uygulanır.
-
-İyi eğlenceler ❤️"""
+    text = f"""🎮 <b>MEYUS UNO</b> Merhaba <b>{html_escape(user.first_name)}</b>! 🎉 Meyus UNO'ya hoş geldin. Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin. 📜 Komutlar: /start - Botu başlat /yardim - Yardım /oyun - Yeni oyun oluştur /katil - Oyuna katıl /baslat - Oyunu başlat /bitir - Oyunu/lobiyi sonlandır /profil - Profilin /cek - Kart çek (sıra sendeyken) /pas - Pas geç (kart çektikten sonra) 🎴 Her an "Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin (sıra sende değilse sadece görüntülemek için). Sıra sende olduğunda aynı buton oynanabilir kartlarını, kart çekme ve pas geçme seçeneklerini listeler; seçtiğin otomatik uygulanır. İyi eğlenceler ❤️"""
     await update.message.reply_text(text, parse_mode="HTML")
 
 
@@ -133,14 +124,24 @@ async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(
         f"🎮 <b>Meyus UNO Lobisi</b>\n\n"
         f"👥 Oyuncular (1)\n"
-        f"• {user.first_name}",
+        f"• {html_escape(user.first_name)}",
         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
     )
     lobby_messages[chat.id] = msg
 
 
 async def _do_start_game(context, chat_id):
+    if chat_id not in games:
+        return False
+
+    game_before = games[chat_id]
+    if game_before.get("started"):
+        return False
+
     game = start_game(chat_id)
+    if not game:
+        return False
+
     t_card = top_card(chat_id)
     color_tr = COLOR_NAME_TR.get(game["top_color"], game["top_color"])
 
@@ -163,6 +164,7 @@ async def _do_start_game(context, chat_id):
         reply_markup=HAND_BUTTON,
     )
     await announce_turn(context, chat_id)
+    return True
 
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -182,7 +184,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = f"🎮 <b>Meyus UNO Lobisi</b>\n\n"
         text += f"👥 Oyuncular ({len(players)})\n\n"
         for p in players:
-            text += f"• {p['name']}\n"
+            text += f"• {html_escape(p['name'])}\n"
         keyboard = [
             [InlineKeyboardButton("➕ Katıl", callback_data="join")],
             [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
@@ -196,12 +198,20 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chat_id not in games:
             await query.answer("Oyun bulunamadı.", show_alert=True)
             return
+        if games[chat_id].get("started"):
+            await query.answer("Oyun zaten başladı.", show_alert=True)
+            return
         if len(games[chat_id]["players"]) < 2:
             await query.answer("En az 2 oyuncu gerekli.", show_alert=True)
             return
         await query.answer("🎉 Oyun başlatılıyor...")
         await query.edit_message_text("🎉 Oyun başlatılıyor...")
-        await _do_start_game(context, chat_id)
+        started = await _do_start_game(context, chat_id)
+        if not started:
+            await context.bot.send_message(
+                chat_id,
+                "❌ Oyun başlatılamadı. Lütfen /oyun ile yeni bir lobi oluşturun."
+            )
         return
     if query.data.startswith("renk:"):
         _, color, target_uid = query.data.split(":")
@@ -243,8 +253,9 @@ async def katil(update, context):
         return
     oyuncu = len(games[update.effective_chat.id]["players"])
     await update.message.reply_text(
-        f"✅ {update.effective_user.first_name} oyuna katıldı!\n\n"
-        f"👥 Toplam oyuncu: {oyuncu}"
+        f"✅ {html_escape(update.effective_user.first_name)} oyuna katıldı!\n\n"
+        f"👥 Toplam oyuncu: {oyuncu}",
+        parse_mode="HTML",
     )
 
 
@@ -254,10 +265,15 @@ async def baslat(update, context):
     if chat_id not in games:
         await update.message.reply_text("Önce /oyun oluştur.")
         return
+    if games[chat_id].get("started"):
+        await update.message.reply_text("ℹ️ Oyun zaten başladı.")
+        return
     if len(games[chat_id]["players"]) < 2:
         await update.message.reply_text("En az 2 oyuncu gerekli.")
         return
-    await _do_start_game(context, chat_id)
+    started = await _do_start_game(context, chat_id)
+    if not started:
+        await update.message.reply_text("❌ Oyun başlatılamadı. Lütfen tekrar deneyin.")
 
 
 # /stickerlar - sticker paketinin içeriğini index+emoji olarak listeler.
@@ -536,13 +552,15 @@ async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lobby_messages.pop(chat_id, None)
     if was_started:
         await update.message.reply_text(
-            f"🛑 Oyun {user.first_name} tarafından sonlandırıldı.\n\n"
-            f"Yeni oyun için /oyun yazabilirsiniz."
+            f"🛑 Oyun {html_escape(user.first_name)} tarafından sonlandırıldı.\n\n"
+            f"Yeni oyun için /oyun yazabilirsiniz.",
+            parse_mode="HTML",
         )
     else:
         await update.message.reply_text(
-            f"🛑 Lobi {user.first_name} tarafından kapatıldı.\n\n"
-            f"Yeni oyun için /oyun yazabilirsiniz."
+            f"🛑 Lobi {html_escape(user.first_name)} tarafından kapatıldı.\n\n"
+            f"Yeni oyun için /oyun yazabilirsiniz.",
+            parse_mode="HTML",
         )
 
 
@@ -553,29 +571,13 @@ async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Önce /start kullan.")
         return
     await update.message.reply_text(
-        f"""👤 Profil
-💰 Coin: {user[3]}
-🏆 Galibiyet: {user[4]}
-🎮 Oyun: {user[5]}
-⭐ Seviye: {user[6]}
-✨ XP: {user[7]}"""
+        f"""👤 Profil 💰 Coin: {user[3]} 🏆 Galibiyet: {user[4]} 🎮 Oyun: {user[5]} ⭐ Seviye: {user[6]} ✨ XP: {user[7]}"""
     )
 
 
 async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        """📖 Yardım
-
-/start - Botu başlatır
-/oyun - Yeni oyun oluşturur
-/katil - Oyuna katılır
-/baslat - Oyunu başlatır
-/bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler)
-/profil - Profilini gösterir
-/cek - Sıra sendeyken kart çeker
-/pas - Kart çektikten sonra sırayı geçer
-
-🎴 Her an "Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin. Sıra sende olduğunda aynı buton oynanabilir kartları, kart çekme ve pas geçme seçeneklerini listeler, seçtiğin otomatik uygulanır."""
+        """📖 Yardım /start - Botu başlatır /oyun - Yeni oyun oluşturur /katil - Oyuna katılır /baslat - Oyunu başlatır /bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler) /profil - Profilini gösterir /cek - Sıra sendeyken kart çeker /pas - Kart çektikten sonra sırayı geçer 🎴 Her an "Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin. Sıra sende olduğunda aynı buton oynanabilir kartları, kart çekme ve pas geçme seçeneklerini listeler, seçtiğin otomatik uygulanır."""
     )
 
 
