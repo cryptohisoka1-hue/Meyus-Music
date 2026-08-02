@@ -461,11 +461,15 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await finalize("✅ Kart oynandı")
 
-    if res["win"]:
+    # NOT: .get() kullanıyoruz — game.py artık her zaman bu key'leri
+    # dolduruyor ama burada da savunmacı davranmak (defensive coding)
+    # ileride game.py'de yapılacak bir değişiklik bota crash yaptırmasın
+    # diye ekstra güvenlik sağlıyor.
+    if res.get("win"):
         await finish_game(context, chat_id, user.id)
         return
 
-    if res["needs_color"]:
+    if res.get("needs_color"):
         keyboard = [[
             InlineKeyboardButton(f"{COLOR_LABELS[c]} {COLOR_NAME_TR[c]}", callback_data=f"renk:{c}:{user.id}")
             for c in ["kirmizi", "yesil"]
@@ -481,11 +485,12 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if res["effect"] in ("skip", "reverse"):
-        await announce_effect(context, chat_id, actor_mention, res["effect"])
-    elif res["effect"] in ("draw2", "draw4"):
+    effect = res.get("effect")
+    if effect in ("skip", "reverse"):
+        await announce_effect(context, chat_id, actor_mention, effect)
+    elif effect in ("draw2", "draw4"):
         next_mention = mention_html(current_player(chat_id), player_name(game, current_player(chat_id)))
-        await announce_effect(context, chat_id, actor_mention, res["effect"], next_mention)
+        await announce_effect(context, chat_id, actor_mention, effect, next_mention)
 
     await announce_turn(context, chat_id)
 
@@ -591,4 +596,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
+    
