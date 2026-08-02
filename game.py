@@ -123,8 +123,13 @@ def pass_turn(chat_id, user_id):
 
 
 def play_card(chat_id, user_id, card_code):
-    """Kart oynar."""
+    """Kart oynar.
+
+    Dönen dict HER ZAMAN şu key'leri içerir (tutarlı şekil, KeyError'ları
+    önlemek için): ok, reason (sadece ok=False iken), win, needs_color, effect.
+    """
     game = games[chat_id]
+
     if game.get("winner"):
         return {"ok": False, "reason": "OYUN_BITTI"}
     if current_player(chat_id) != user_id:
@@ -139,6 +144,11 @@ def play_card(chat_id, user_id, card_code):
     if not can_play(card_code, top, color):
         return {"ok": False, "reason": "GECERSIZ_HAMLE"}
 
+    # Başarılı hamle için varsayılan (default) sonuç şekli.
+    # Aşağıdaki tüm dallar bu sözlüğü doldurup döndürür; hiçbir dal
+    # eksik key ile dönmez.
+    result = {"ok": True, "win": False, "needs_color": False, "effect": None}
+
     # Kartı elinden çıkar ve desteye at
     hand.remove(card_code)
     game["discard"].append(card_code)
@@ -147,14 +157,16 @@ def play_card(chat_id, user_id, card_code):
     # Joker rengi
     if card_code.startswith("wild_"):
         game["needs_color"] = True
-        return {"ok": True, "needs_color": True}
+        result["needs_color"] = True
+        return result
 
     game["top_color"] = card_color(card_code)
 
     # Kazanma kontrolü
     if len(hand) == 0:
         game["winner"] = user_id
-        return {"ok": True, "win": True}
+        result["win"] = True
+        return result
 
     # Efekt kartları
     effect = None
@@ -174,10 +186,12 @@ def play_card(chat_id, user_id, card_code):
             if game["deck"]:
                 game["hands"][next_id].append(game["deck"].pop())
         _next_turn(chat_id)
-        return {"ok": True, "effect": effect}
+        result["effect"] = effect
+        return result
 
     _next_turn(chat_id)
-    return {"ok": True, "effect": effect}
+    result["effect"] = effect
+    return result
 
 
 def choose_color(chat_id, user_id, color):
@@ -225,3 +239,4 @@ def find_active_game_for_user(user_id):
     if chat_id and chat_id in games:
         return chat_id, games[chat_id]
     return None, None
+        
