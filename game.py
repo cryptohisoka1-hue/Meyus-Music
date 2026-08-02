@@ -147,26 +147,34 @@ def play_card(chat_id, user_id, card_code):
     # Başarılı hamle için varsayılan (default) sonuç şekli.
     # Aşağıdaki tüm dallar bu sözlüğü doldurup döndürür; hiçbir dal
     # eksik key ile dönmez.
-    result = {"ok": True, "win": False, "needs_color": False, "effect": None}
+    result = {"ok": True, "win": False, "needs_color": False, "effect": None, "uno": False}
 
     # Kartı elinden çıkar ve desteye at
     hand.remove(card_code)
     game["discard"].append(card_code)
     game["has_drawn"][user_id] = False
 
+    is_wild = card_code.startswith("wild_")
+
+    # Kazanma kontrolü — joker dahil TÜM kart tipleri icin gecerli olmali.
+    # (Onceden joker erken return ettigi icin jokerle oyunu bitirmek hic
+    # calismiyordu; simdi bu kontrol her turlu karttan once yapiliyor.)
+    if len(hand) == 0:
+        game["winner"] = user_id
+        result["win"] = True
+        return result
+
+    # UNO bildirimi: elde tek kart kaldiysa (kazanma degil) isaretle.
+    if len(hand) == 1:
+        result["uno"] = True
+
     # Joker rengi
-    if card_code.startswith("wild_"):
+    if is_wild:
         game["needs_color"] = True
         result["needs_color"] = True
         return result
 
     game["top_color"] = card_color(card_code)
-
-    # Kazanma kontrolü
-    if len(hand) == 0:
-        game["winner"] = user_id
-        result["win"] = True
-        return result
 
     # Efekt kartları
     effect = None
