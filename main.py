@@ -226,6 +226,57 @@ async def tema(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=theme_keyboard()
     )
 
+async def theme_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    query = update.callback_query
+    user = query.from_user
+
+    await query.answer()
+
+    theme_id = query.data.split(":", 1)[1]
+
+    if theme_id not in CARD_THEMES:
+
+        await query.answer(
+            "❌ Tema bulunamadı.",
+            show_alert=True
+        )
+
+        return
+
+    try:
+
+        db.set_theme(
+            user.id,
+            theme_id
+        )
+
+    except Exception as e:
+
+        print(f"⚠️ Tema kaydedilemedi: {e}")
+
+        await query.answer(
+            "❌ Tema kaydedilemedi.",
+            show_alert=True
+        )
+
+        return
+
+    theme_name = CARD_THEMES[
+        theme_id
+    ]["name"]
+
+    await query.edit_message_text(
+        f"✅ <b>Tema değiştirildi!</b>\n\n"
+        f"🎨 {theme_name}\n\n"
+        "🎴 Kartlarını görmek için aşağıdaki butona dokun.",
+        parse_mode="HTML",
+        reply_markup=HAND_BUTTON
+    )
+
 async def get_dimmed_card_file_id(
     bot,
     card_code,
