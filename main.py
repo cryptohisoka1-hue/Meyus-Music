@@ -203,6 +203,29 @@ HAND_BUTTON = InlineKeyboardMarkup([
 # SİLİK KART GÖRSELİ
 # =========================================================
 
+async def tema(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    user = update.effective_user
+
+    try:
+        db.get_or_create_user(
+            user.id,
+            user.username,
+            user.first_name
+        )
+    except Exception:
+        pass
+
+    current = get_user_theme(user.id)
+
+    await update.message.reply_text(
+        "🎨 <b>Meyus UNO Kart Teması</b>\n\n"
+        f"Şu anki teman: <b>{CARD_THEMES[current]['name']}</b>\n\n"
+        "Kartlarının görünmesini istediğin temayı seç:",
+        parse_mode="HTML",
+        reply_markup=theme_keyboard()
+    )
+
 async def get_dimmed_card_file_id(
     bot,
     card_code,
