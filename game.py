@@ -166,6 +166,13 @@ def play_card(chat_id, user_id, card_code):
     elif val == "yon":
         effect = "reverse"
         game["direction"] *= -1
+        # 2 kişilik oyunlarda YÖN kartı resmi UNO kurallarına göre DUR gibi davranır:
+        # sıra karşıya geçmez, kartı oynayan kişi tekrar oynar. Bunu sağlamak için
+        # normal akıştaki tek _next_turn çağrısına ek bir tane daha ekliyoruz,
+        # böylece toplamda 2 adım ilerleyip aynı oyuncuya geri dönülüyor
+        # (tıpkı "dur" kartında olduğu gibi).
+        if len(game["players"]) == 2:
+            _next_turn(chat_id)
     elif val == "arti2":
         effect = "draw2"
         _next_turn(chat_id)
