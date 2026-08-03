@@ -1409,38 +1409,25 @@ async def inline_hand(
         return
 
     my_turn = (
-        current_player(chat_id)
-        == user.id
-    )
+    my_turn = current_player(chat_id) == user.id
 
-    hand = game[
-        "hands"
-    ].get(
-        user.id,
-        []
-    )
+hand = game["hands"].get(
+    user.id,
+    []
+)
 
-    legal = set(
-        legal_cards_for(
-            chat_id,
-            user.id
-        )
-    ) if my_turn else set()
-
-    cache_chat_id = (
-        STORAGE_CHAT_ID
-        or chat_id
+legal = set(
+    legal_cards_for(
+        chat_id,
+        user.id
     )
+) if my_turn else set()
 
-    theme_id, theme = (
-        get_theme_info(
-            user.id
-        )
-    )
+theme_id = get_user_theme(user.id)
 
-    sticker_set_name = (
-        theme["sticker_set"]
-    )
+theme_sticker_set = CARD_THEMES[
+    theme_id
+]["sticker_set"]
 
     results = []
 
