@@ -505,7 +505,7 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎉 {actor_mention} <b>UNO!</b> Elinde sadece 1 kart kaldı!",
             parse_mode="HTML",
         )
-      if res.get("needs_color"):
+    if res.get("needs_color"):
         keyboard = [[
             InlineKeyboardButton(
                 f"{COLOR_LABELS[c]} {COLOR_NAME_TR[c]}",
@@ -643,4 +643,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()  
+    main()
