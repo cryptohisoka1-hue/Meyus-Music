@@ -8,7 +8,8 @@ from cards_data import (
 from card_cache import get_card_file_id, get_local_icon_file_id, prewarm_all_cards
 from icon_assets import pass_icon_bytes, info_icon_bytes
 from sticker_cache import get_sticker_set, get_card_sticker_file_id
-from card_sticker_map import CARD_TO_STICKER_INDEX
+from card_sticker_map import get_card_map_for_theme
+from themes import THEMES, DEFAULT_THEME, get_theme_by_id
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -143,6 +144,7 @@ Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin.
 /baslat - Oyunu başlat
 /bitir - Oyunu/lobiyi sonlandır
 /profil - Profilin
+/tema - Kart görseli temanı seç
 /siralama - Haftalık ilk 10 sıralaması
 /cek - Kart çek (sıra sendeyken)
 /pas - Pas geç (kart çektikten sonra)
@@ -272,6 +274,32 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+    if query.data.startswith("tema:"):
+        _, theme_id = query.data.split(":", 1)
+        theme = get_theme_by_id(theme_id)
+        db.add_user(user.id, user.username, user.first_name)
+        db.set_theme(user.id, theme["id"])
+        await query.answer(f"Tema: {theme['name']}")
+
+        rows = []
+        row = []
+        for t in THEMES:
+            mark = " ✅" if t["id"] == theme["id"] else ""
+            row.append(InlineKeyboardButton(f"{t['name']}{mark}", callback_data=f"tema:{t['id']}"))
+            if len(row) == 2:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+
+        await query.edit_message_text(
+            f"🎨 Tema güncellendi: <b>{theme['name']}</b>\n\n"
+            f"Bir sonraki elini gördüğünde yeni temanla karşılaşacaksın.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(rows),
+        )
+        return
+
     if query.data.startswith("renk:"):
         _, color, target_uid = query.data.split(":")
         target_uid = int(target_uid)
@@ -344,8 +372,11 @@ async def baslat(update, context):
 # Bu, CARD_TO_STICKER_INDEX eşleşmesini oluşturmak için bir kereye mahsus
 # kullanılır; sonrasında kaldırılabilir.
 async def stickerlar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # /stickerlar <paket_adı> -> belirtilen paketi listeler (yeni tema eşlemesi
+    # çıkarmak için). Argüman verilmezse varsayılan STICKER_SET_NAME kullanılır.
+    pack_name = context.args[0] if context.args else STICKER_SET_NAME
     try:
-        sticker_set = await get_sticker_set(context.bot, STICKER_SET_NAME)
+        sticker_set = await get_sticker_set(context.bot, pack_name)
     except Exception as e:
         await update.message.reply_text(f"❌ Sticker paketi alınamadı: {e}")
         return
@@ -452,6 +483,30 @@ async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# /tema - kart görseli teması seç
+async def tema(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    db.add_user(user.id, user.username, user.first_name)
+    current = db.get_theme(user.id)
+
+    rows = []
+    row = []
+    for t in THEMES:
+        mark = " ✅" if t["id"] == current else ""
+        row.append(InlineKeyboardButton(f"{t['name']}{mark}", callback_data=f"tema:{t['id']}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+
+    await update.message.reply_text(
+        "🎨 Kart görseli teman:\n\n"
+        "Seçtiğin tema sadece sana özel görünür, diğer oyuncuları etkilemez.",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+
+
 # /siralama - Türkiye saatine göre haftanın ilk 10 oyuncusu
 async def siralama(update: Update, context: ContextTypes.DEFAULT_TYPE):
     top = db.get_weekly_leaderboard(10)
@@ -489,6 +544,12 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     legal = set(legal_cards_for(chat_id, user.id)) if my_turn else set()
     cache_chat_id = STORAGE_CHAT_ID or chat_id
 
+    # Oyuncunun kendi seçtiği tema (varsayılan: classic_colorblind)
+    theme_id = db.get_theme(user.id)
+    theme = get_theme_by_id(theme_id)
+    theme_sticker_set = theme["sticker_set"]
+    theme_card_map = get_card_map_for_theme(theme_id)
+
     results = []
     for idx, card_code in enumerate(hand):
         sticker_file_id = None
@@ -499,14 +560,14 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # chosen_result bunu tanıyıp hiçbir şey yapmadan çıkacak (pasif kart).
         result_id_prefix = "illegal:" if is_illegal else ""
 
-        if card_code in CARD_TO_STICKER_INDEX:
+        if card_code in theme_card_map:
             try:
                 sticker_file_id = await get_card_sticker_file_id(
-                    context.bot, STICKER_SET_NAME, card_code,
-                    CARD_TO_STICKER_INDEX[card_code]
+                    context.bot, theme_sticker_set, card_code,
+                    theme_card_map[card_code]
                 )
             except Exception as e:
-                print(f"⚠️ Sticker alınamadı ({card_code}): {e}")
+                print(f"⚠️ Sticker alınamadı ({theme_sticker_set}/{card_code}): {e}")
 
         if sticker_file_id:
             # title/description YOK -> Telegram bunu grid modunda (yan yana, yazısız) gösterir
@@ -792,6 +853,7 @@ async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /baslat - Oyunu başlatır
 /bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler)
 /profil - Profilini gösterir
+/tema - Kart görseli temanı seçmeni sağlar (kişisel, sadece sende görünür)
 /siralama - Haftalık ilk 10 sıralaması (Türkiye saatine göre)
 /cek - Sıra sendeyken kart çeker
 /pas - Kart çektikten sonra sırayı geçer
@@ -846,6 +908,7 @@ def main():
     app.add_handler(CommandHandler("baslat", baslat))
     app.add_handler(CommandHandler("bitir", bitir))
     app.add_handler(CommandHandler("profil", profil))
+    app.add_handler(CommandHandler("tema", tema))
     app.add_handler(CommandHandler("siralama", siralama))
     app.add_handler(CommandHandler("cek", cek))
     app.add_handler(CommandHandler("pas", pas))
