@@ -641,12 +641,20 @@ async def bitir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # /profil
 async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = db.get_user(update.effective_user.id)
+    user_obj = update.effective_user
+    db.add_user(user_obj.id, user_obj.username, user_obj.first_name)  # kayıtlı değilse ekle, kayıtlıysa dokunmaz (INSERT OR IGNORE)
+    user = db.get_user(user_obj.id)
     if not user:
-        await update.message.reply_text("Önce /start kullan.")
+        await update.message.reply_text("❌ Profil oluşturulamadı, tekrar dener misin?")
         return
+
     await update.message.reply_text(
-        f"""👤 Profil 💰 Coin: {user[3]} 🏆 Galibiyet: {user[4]} 🎮 Oyun: {user[5]} ⭐ Seviye: {user[6]} ✨ XP: {user[7]}"""
+        f"""὆ Profil
+Ὃ Coin: {user[3]}
+Ἴ Galibiyet: {user[4]}
+Ἲ Oyun: {user[5]}
+⭐ Seviye: {user[6]}
+✨ XP: {user[7]}"""
     )
 
 
