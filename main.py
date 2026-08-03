@@ -1,6 +1,25 @@
 import asyncio
+import io
 
-from game import *
+from PIL import Image, ImageEnhance
+
+from game import (
+    games,
+    lobby_messages,
+    user_active_chat,
+    create_game,
+    join_game,
+    start_game,
+    top_card,
+    current_player,
+    legal_cards_for,
+    draw_card,
+    pass_turn,
+    play_card,
+    choose_color,
+    end_game,
+    find_active_game_for_user,
+)
 
 from cards_data import (
     card_display_label,
@@ -8,19 +27,11 @@ from cards_data import (
     COLOR_NAME_TR,
     COLOR_LABELS,
     ALL_CARD_CODES,
-    PASS_ICON_CODE,
-    INFO_ICON_CODE,
 )
 
 from card_cache import (
     get_card_file_id,
-    get_local_icon_file_id,
     prewarm_all_cards,
-)
-
-from icon_assets import (
-    pass_icon_bytes,
-    info_icon_bytes,
 )
 
 from sticker_cache import (
@@ -38,7 +49,6 @@ from telegram import (
     InlineQueryResultCachedSticker,
     InlineQueryResultArticle,
     InputTextMessageContent,
-    InlineQueryResultsButton,
 )
 
 from telegram.ext import (
@@ -61,20 +71,54 @@ from config import (
 from database import db
 
 
-# ============================================================
+# =========================================================
+# TEMA SİSTEMİ
+# =========================================================
+
+CARD_THEMES = {
+    "meyus": {
+        "name": "🌈 Meyus UNO",
+        "sticker_set": STICKER_SET_NAME,
+    },
+
+    "wolf_arya": {
+        "name": "🐺 Wolf Arya",
+        "sticker_set": "wolf_arya",
+    },
+
+    "arya_winnie": {
+        "name": "🧸 Arya Winnie",
+        "sticker_set": "arya_winnie_theme_pack",
+    },
+
+    "arya_sincap": {
+        "name": "🐿️ Arya Sincap",
+        "sticker_set": "arya_sincap_theme_pack",
+    },
+
+    "arya_fb": {
+        "name": "⚽ Arya FB",
+        "sticker_set": "arya_fb_theme_pack",
+    },
+}
+
+
+# Silik kartların file_id önbelleği
+DIMMED_FILE_IDS = {}
+
+
+# =========================================================
 # YARDIMCI FONKSİYONLAR
-# ============================================================
+# =========================================================
 
 def player_name(game, uid):
-    """Oyuncunun adını bulur."""
-    for p in game.get("players", []):
+    for p in game["players"]:
         if p["id"] == uid:
-            return p.get("name", "?")
+            return p["name"]
     return "?"
 
 
 def html_escape(value):
-    """Telegram HTML parse_mode için güvenli metin."""
     value = "" if value is None else str(value)
 
     return (
@@ -86,38 +130,126 @@ def html_escape(value):
 
 
 def mention_html(uid, name):
-    """Kullanıcı adını tıklanabilir Telegram etiketi yapar."""
-    return (
-        f'<a href="tg://user?id={uid}">'
-        f'{html_escape(name)}'
-        f'</a>'
-    )
+    return f'<a href="tg://user?id={uid}">{html_escape(name)}</a>'
 
 
-# ============================================================
-# ORTAK BUTON
-# ============================================================
+def get_user_theme(user_id):
+    try:
+        theme = db.get_theme(user_id)
 
-HAND_BUTTON = InlineKeyboardMarkup(
-    [
-        [
+        if theme in CARD_THEMES:
+            return theme
+
+    except Exception as e:
+        print(f"⚠️ Tema okunamadı: {e}")
+
+    return "meyus"
+
+
+def get_theme_info(user_id):
+    theme_id = get_user_theme(user_id)
+    return theme_id, CARD_THEMES[theme_id]
+
+
+def theme_keyboard():
+    rows = []
+
+    for theme_id, theme in CARD_THEMES.items():
+        rows.append([
             InlineKeyboardButton(
-                "🎴 Kartlarımı Gör / Oyna",
-                switch_inline_query_current_chat=""
+                theme["name"],
+                callback_data=f"theme:{theme_id}"
             )
-        ]
+        ])
+
+    return InlineKeyboardMarkup(rows)
+
+
+HAND_BUTTON = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton(
+            "🎴 Kartlarımı Gör / Oyna",
+            switch_inline_query_current_chat=""
+        )
     ]
-)
+])
 
 
-# ============================================================
-# SIRA BİLDİRİMİ
-# ============================================================
+# =========================================================
+# SİLİK KART GÖRSELİ
+# =========================================================
 
-async def announce_turn(
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id,
+async def get_dimmed_card_file_id(
+    bot,
+    card_code,
+    normal_file_id,
+    storage_chat_id
 ):
+    """
+    Oynanamayan kartı gri/silik hale getirir.
+
+    Telegram inline sonuçlarında opacity özelliği olmadığı için
+    kart görselini indirip karartıyoruz ve Telegram'a bir kez
+    yükleyerek file_id'sini cache'liyoruz.
+    """
+
+    cache_key = card_code
+
+    if cache_key in DIMMED_FILE_IDS:
+        return DIMMED_FILE_IDS[cache_key]
+
+    try:
+        telegram_file = await bot.get_file(normal_file_id)
+
+        image_bytes = await telegram_file.download_as_bytearray()
+
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+
+        # Önce parlaklığı azalt
+        image = ImageEnhance.Brightness(image).enhance(0.48)
+
+        # Hafif desatürasyon
+        image = ImageEnhance.Color(image).enhance(0.35)
+
+        output = io.BytesIO()
+
+        image.save(
+            output,
+            format="PNG",
+            optimize=True
+        )
+
+        output.seek(0)
+
+        message = await bot.send_photo(
+            chat_id=storage_chat_id,
+            photo=output,
+        )
+
+        if not message.photo:
+            return normal_file_id
+
+        dimmed_file_id = message.photo[-1].file_id
+
+        DIMMED_FILE_IDS[cache_key] = dimmed_file_id
+
+        return dimmed_file_id
+
+    except Exception as e:
+        print(
+            f"⚠️ Silik kart oluşturulamadı "
+            f"({card_code}): {e}"
+        )
+
+        return normal_file_id
+
+
+# =========================================================
+# SIRA DUYURUSU
+# =========================================================
+
+async def announce_turn(context, chat_id):
+
     game = games.get(chat_id)
 
     if not game:
@@ -129,78 +261,66 @@ async def announce_turn(
     if game.get("winner"):
         return
 
-    try:
-        uid = current_player(chat_id)
-    except Exception:
-        return
-
-    if uid is None:
-        return
+    uid = current_player(chat_id)
 
     name = player_name(game, uid)
 
     color_tr = COLOR_NAME_TR.get(
-        game.get("top_color"),
-        game.get("top_color", "?"),
+        game["top_color"],
+        game["top_color"]
     )
 
-    try:
-        top_label = card_display_label(
-            top_card(chat_id)
-        )
-    except Exception:
-        top_label = "Bilinmiyor"
+    top_label = card_display_label(
+        top_card(chat_id)
+    )
 
     await context.bot.send_message(
         chat_id,
-        (
-            f"🎯 Sıra sende "
-            f"{mention_html(uid, name)}!\n\n"
-            f"🎴 Son atılan kart: "
-            f"<b>{html_escape(top_label)}</b>\n"
-            f"🎨 Geçerli renk: "
-            f"<b>{html_escape(color_tr)}</b>\n\n"
-            f"Aşağıdaki butona dokun, "
-            f"kartların otomatik açılsın 🎴"
-        ),
+
+        f"🎯 Sıra sende "
+        f"{mention_html(uid, name)}!\n"
+        f"🎴 Son atılan kart: "
+        f"<b>{top_label}</b>\n"
+        f"🎨 Geçerli renk: "
+        f"<b>{color_tr}</b>\n\n"
+        f"Aşağıdaki butona dokun, "
+        f"kartların otomatik açılsın 🎴",
+
         parse_mode="HTML",
         reply_markup=HAND_BUTTON,
     )
 
 
-# ============================================================
-# KART ETKİSİ BİLDİRİMİ
-# ============================================================
+# =========================================================
+# KART ETKİSİ
+# =========================================================
 
 async def announce_effect(
     context,
     chat_id,
     actor_mention,
     effect,
-    next_mention=None,
+    next_mention=None
 ):
+
     texts = {
-        "skip": (
+        "skip":
             f"⛔ {actor_mention} "
-            f"DUR kartı oynadı, sıra atlandı!"
-        ),
+            f"DUR kartı oynadı, sıra atlandı!",
 
-        "reverse": (
+        "reverse":
             f"🔄 {actor_mention} "
-            f"YÖN kartı oynadı, yön değişti!"
-        ),
+            f"YÖN kartı oynadı, yön değişti!",
 
-        "draw2": (
-            f"➕2️⃣ {actor_mention} "
-            f"+2 oynadı, {next_mention} "
-            f"2 kart çekip sırasını kaçırdı!"
-        ),
+        "draw2":
+            f"➕2️⃣ {actor_mention} +2 oynadı, "
+            f"{next_mention} ceza kartlarını çekip "
+            f"sırasını kaçırdı!",
 
-        "draw4": (
-            f"➕4️⃣ {actor_mention} "
-            f"+4 oynadı, {next_mention} "
-            f"4 kart çekip sırasını kaçırdı!"
-        ),
+        "draw4":
+            f"➕4️⃣ {actor_mention} +4 oynadı, "
+            f"{next_mention} ceza kartlarını çekip "
+            f"sırasını kaçırdı!",
     }
 
     text = texts.get(effect)
@@ -209,368 +329,369 @@ async def announce_effect(
         await context.bot.send_message(
             chat_id,
             text,
-            parse_mode="HTML",
+            parse_mode="HTML"
         )
 
 
-# ============================================================
-# OYUN BİTİRME
-# ============================================================
+# =========================================================
+# OYUN BİTİR
+# =========================================================
 
 async def finish_game(
     context,
     chat_id,
-    winner_uid,
+    winner_uid
 ):
-    game = games.get(chat_id)
 
-    if not game:
-        return
-
-    winner_name = player_name(
-        game,
-        winner_uid,
-    )
+    game = games[chat_id]
 
     winner_mention = mention_html(
         winner_uid,
-        winner_name,
+        player_name(game, winner_uid)
     )
 
-    # İstatistikleri kaydet
-    try:
-        db.add_win(
-            winner_uid,
-            winner_name,
-        )
-    except Exception as e:
-        print(
-            f"⚠️ Galibiyet kaydedilemedi: {e}"
+    winner_name = player_name(
+        game,
+        winner_uid
+    )
+
+    db.add_win(
+        winner_uid,
+        winner_name
+    )
+
+    for p in game["players"]:
+        db.add_game(
+            p["id"],
+            p["name"]
         )
 
-    for p in game.get("players", []):
-        try:
-            db.add_game(
-                p["id"],
-                p["name"],
-            )
-        except Exception as e:
-            print(
-                f"⚠️ Oyun istatistiği kaydedilemedi: {e}"
-            )
+    db.add_coin(
+        winner_uid,
+        50
+    )
 
-    # Ödüller
-    try:
-        db.add_coin(
-            winner_uid,
-            50,
-        )
-    except Exception as e:
-        print(
-            f"⚠️ Coin eklenemedi: {e}"
-        )
+    db.add_xp(
+        winner_uid,
+        30
+    )
 
-    try:
-        db.add_xp(
-            winner_uid,
-            30,
-        )
-    except Exception as e:
-        print(
-            f"⚠️ XP eklenemedi: {e}"
-        )
-
-    # Önce kazanan mesajını gönder
     await context.bot.send_message(
         chat_id,
-        (
-            f"🏆 {winner_mention} "
-            f"<b>oyunu kazandı!</b> 🎉\n\n"
-            f"💰 +50 coin\n"
-            f"⭐ +30 XP\n\n"
-            f"Yeni oyun için <b>/oyun</b>"
-        ),
-        parse_mode="HTML",
+
+        f"🏆 {winner_mention} "
+        f"oyunu kazandı! 🎉\n\n"
+        f"💰 +50 coin\n"
+        f"⭐ +30 XP\n\n"
+        f"Yeni oyun için /oyun",
+
+        parse_mode="HTML"
     )
 
-    # Oyunu temizle
-    try:
-        end_game(chat_id)
-    except Exception as e:
-        print(
-            f"⚠️ Oyun temizlenirken hata: {e}"
-        )
 
-    try:
-        lobby_messages.pop(chat_id, None)
-    except Exception:
-        pass
-
-
-# ============================================================
+# =========================================================
 # /START
-# ============================================================
+# =========================================================
 
 async def start(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    context: ContextTypes.DEFAULT_TYPE
 ):
+
     user = update.effective_user
 
-    if not user:
+    db.get_or_create_user(
+        user.id,
+        user.username,
+        user.first_name
+    )
+
+    text = (
+        f"🎮 <b>MEYUS UNO</b>\n\n"
+        f"Merhaba "
+        f"<b>{html_escape(user.first_name)}</b>! 🎉\n\n"
+        f"Meyus UNO'ya hoş geldin.\n\n"
+        f"📜 <b>Komutlar</b>\n\n"
+        f"/start - Botu başlat\n"
+        f"/yardim - Yardım\n"
+        f"/oyun - Yeni oyun\n"
+        f"/katil - Oyuna katıl\n"
+        f"/baslat - Oyunu başlat\n"
+        f"/bitir - Oyunu/lobiyi sonlandır\n"
+        f"/profil - Profilin\n"
+        f"/tema - Kart temasını seç\n"
+        f"/cek - Kart çek\n"
+        f"/pas - Pas geç\n\n"
+        f"🎨 /tema ile kart görünümünü "
+        f"kişiselleştirebilirsin.\n\n"
+        f"🎴 Kartlarımı Gör / Oyna butonuyla "
+        f"kartlarını açabilirsin."
+    )
+
+    await update.message.reply_text(
+        text,
+        parse_mode="HTML"
+    )
+
+
+# =========================================================
+# /TEMA
+# =========================================================
+
+async def tema(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    user = update.effective_user
+
+    db.get_or_create_user(
+        user.id,
+        user.username,
+        user.first_name
+    )
+
+    current_theme = get_user_theme(
+        user.id
+    )
+
+    current_name = CARD_THEMES[
+        current_theme
+    ]["name"]
+
+    await update.message.reply_text(
+        f"🎨 <b>Kart Teması</b>\n\n"
+        f"Şu an kullandığın tema:\n"
+        f"<b>{current_name}</b>\n\n"
+        f"👇 Kullanmak istediğin temayı seç:",
+        parse_mode="HTML",
+        reply_markup=theme_keyboard()
+    )
+
+
+# =========================================================
+# TEMA CALLBACK
+# =========================================================
+
+async def theme_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    query = update.callback_query
+
+    await query.answer()
+
+    user = query.from_user
+
+    theme_id = query.data.split(
+        ":",
+        1
+    )[1]
+
+    if theme_id not in CARD_THEMES:
+        await query.answer(
+            "❌ Tema bulunamadı.",
+            show_alert=True
+        )
         return
 
     try:
-        db.add_user(
+        db.get_or_create_user(
             user.id,
             user.username,
-            user.first_name,
-        )
-    except Exception as e:
-        print(
-            f"⚠️ Kullanıcı kaydedilemedi: {e}"
+            user.first_name
         )
 
-    text = (
-        "🎴 <b>Meyus UNO</b>'ya hoş geldin!\n\n"
-        "🔥 Telegram üzerinde arkadaşlarınla "
-        "UNO oyna.\n\n"
-        "🎮 <b>Komutlar</b>\n"
-        "• /oyun — Yeni oyun oluştur\n"
-        "• /katil — Oyuna katıl\n"
-        "• /baslat — Oyunu başlat\n"
-        "• /bitir — Oyunu sonlandır\n"
-        "• /profil — Profilini göster\n"
-        "• /siralama — Haftalık sıralama\n"
-        "• /yardim — Yardım\n\n"
-        "🎴 Oyun başladıktan sonra "
-        "<b>Kartlarımı Gör / Oyna</b> "
-        "butonundan elini açabilirsin."
+        db.set_theme(
+            user.id,
+            theme_id
+        )
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Tema kaydedilemedi: {e}"
+        )
+
+        await query.answer(
+            "❌ Tema kaydedilemedi.",
+            show_alert=True
+        )
+
+        return
+
+    selected = CARD_THEMES[
+        theme_id
+    ]["name"]
+
+    await query.edit_message_text(
+        f"✅ <b>Tema değiştirildi!</b>\n\n"
+        f"🎨 Yeni tema: "
+        f"<b>{selected}</b>\n\n"
+        f"🎴 Kartlarını görmek için "
+        f"butona dokun.",
+        parse_mode="HTML",
+        reply_markup=HAND_BUTTON
     )
 
-    if update.message:
-        await update.message.reply_text(
-            text,
-            parse_mode="HTML",
-        )
 
-
-# ============================================================
+# =========================================================
 # /OYUN
-# ============================================================
+# =========================================================
 
 async def oyun(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    context: ContextTypes.DEFAULT_TYPE
 ):
+
     chat = update.effective_chat
     user = update.effective_user
 
-    if not chat or not user or not update.message:
-        return
-
-    try:
-        db.add_user(
-            user.id,
-            user.username,
-            user.first_name,
-        )
-    except Exception as e:
-        print(
-            f"⚠️ Kullanıcı kaydedilemedi: {e}"
-        )
-
-    if chat.id in games:
-        await update.message.reply_text(
-            "❌ Bu grupta zaten açık bir oyun var."
-        )
-        return
+    db.get_or_create_user(
+        user.id,
+        user.username,
+        user.first_name
+    )
 
     if not create_game(
         chat.id,
-        user.id,
+        user.id
     ):
+
         await update.message.reply_text(
-            "❌ Oyun oluşturulamadı."
+            "❌ Bu grupta zaten açık bir oyun var."
         )
+
         return
 
     join_game(
         chat.id,
         user.id,
-        user.first_name,
+        user.first_name
     )
-
-    players = games[chat.id]["players"]
-
-    text = (
-        "🎮 <b>Meyus UNO Lobisi</b>\n\n"
-        f"👥 Oyuncular ({len(players)})\n\n"
-    )
-
-    for p in players:
-        text += (
-            f"• {html_escape(p['name'])}\n"
-        )
 
     keyboard = [
         [
             InlineKeyboardButton(
                 "➕ Katıl",
-                callback_data="join",
+                callback_data="join"
             )
         ],
         [
             InlineKeyboardButton(
                 "▶️ Başlat",
-                callback_data="start_game",
+                callback_data="start_game"
             )
-        ],
+        ]
     ]
 
-    message = await update.message.reply_text(
-        text,
-        parse_mode="HTML",
+    msg = await update.message.reply_text(
+        f"🎮 <b>Meyus UNO Lobisi</b>\n\n"
+        f"👥 Oyuncular (1)\n\n"
+        f"• {html_escape(user.first_name)}",
+
         reply_markup=InlineKeyboardMarkup(
             keyboard
         ),
+
+        parse_mode="HTML"
     )
 
-    try:
-        lobby_messages[chat.id] = message.message_id
-    except Exception:
-        pass
+    lobby_messages[
+        chat.id
+    ] = msg
 
 
-# ============================================================
+# =========================================================
 # OYUNU BAŞLAT
-# ============================================================
+# =========================================================
 
 async def _do_start_game(
     context,
-    chat_id,
+    chat_id
 ):
+
     if chat_id not in games:
         return False
 
-    game_before = games[chat_id]
+    game_before = games[
+        chat_id
+    ]
 
     if game_before.get("started"):
         return False
 
-    if len(
-        game_before.get("players", [])
-    ) < 2:
-        return False
-
-    game = start_game(chat_id)
+    game = start_game(
+        chat_id
+    )
 
     if not game:
         return False
 
-    t_card = top_card(chat_id)
+    t_card = top_card(
+        chat_id
+    )
 
     color_tr = COLOR_NAME_TR.get(
-        game.get("top_color"),
-        game.get("top_color", "?"),
+        game["top_color"],
+        game["top_color"]
     )
 
-    # Kart cache
     cache_chat_id = (
-        STORAGE_CHAT_ID or chat_id
+        STORAGE_CHAT_ID
+        or chat_id
     )
 
-    try:
-        asyncio.create_task(
-            prewarm_all_cards(
-                context.bot,
-                cache_chat_id,
-                ALL_CARD_CODES,
-            )
-        )
-    except Exception as e:
-        print(
-            f"⚠️ Kart cache başlatılamadı: {e}"
-        )
-
-    try:
-        asyncio.create_task(
-            get_local_icon_file_id(
-                context.bot,
-                PASS_ICON_CODE,
-                pass_icon_bytes(),
-            )
-        )
-    except Exception as e:
-        print(
-            f"⚠️ Pas ikonu cache başlatılamadı: {e}"
-        )
-
-    try:
-        asyncio.create_task(
-            get_local_icon_file_id(
-                context.bot,
-                INFO_ICON_CODE,
-                info_icon_bytes(),
-            )
-        )
-    except Exception as e:
-        print(
-            f"⚠️ Bilgi ikonu cache başlatılamadı: {e}"
-        )
-
-    try:
-        file_id = await get_card_file_id(
+    asyncio.create_task(
+        prewarm_all_cards(
             context.bot,
-            t_card,
             cache_chat_id,
+            ALL_CARD_CODES
         )
-    except Exception as e:
-        print(
-            f"⚠️ Başlangıç kartı yüklenemedi: {e}"
-        )
+    )
 
-        await context.bot.send_message(
-            chat_id,
-            "❌ Başlangıç kartı yüklenemedi."
-        )
-
-        return False
+    file_id = await get_card_file_id(
+        context.bot,
+        t_card,
+        cache_chat_id
+    )
 
     await context.bot.send_photo(
         chat_id,
         photo=file_id,
+
         caption=(
-            "🎉 <b>Oyun başladı!</b>\n\n"
+            f"🎉 <b>Oyun başladı!</b>\n\n"
             f"🎨 Başlangıç rengi: "
-            f"<b>{html_escape(color_tr)}</b>\n\n"
-            "Herkes istediği an elini görebilir.\n"
-            "Sadece sırası gelen oynayabilir."
+            f"<b>{color_tr}</b>\n\n"
+            f"Herkes istediği zaman "
+            f"elini görebilir.\n"
+            f"Sadece sırası gelen oynayabilir."
         ),
+
         parse_mode="HTML",
-        reply_markup=HAND_BUTTON,
+        reply_markup=HAND_BUTTON
     )
 
     await announce_turn(
         context,
-        chat_id,
+        chat_id
     )
 
     return True
 
 
-# ============================================================
-# CALLBACK BUTONLARI
-# ============================================================
+# =========================================================
+# BUTONLAR
+# =========================================================
 
 async def button(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    context: ContextTypes.DEFAULT_TYPE
 ):
-    query = update.callback_query
 
-    if not query:
-        return
+    query = update.callback_query
 
     chat_id = (
         query.message.chat.id
@@ -580,87 +701,97 @@ async def button(
 
     user = query.from_user
 
+    # -----------------------------------------------------
+    # NOOP
+    # -----------------------------------------------------
+
     if query.data == "noop":
+
         await query.answer(
-            "Bu hamle geçersizdi, işlenmedi.",
-            show_alert=True,
+            "Bu hamle geçersizdi.",
+            show_alert=True
         )
+
         return
 
-    # --------------------------------------------------------
-    # KATIL
-    # --------------------------------------------------------
+    # -----------------------------------------------------
+    # TEMA
+    # -----------------------------------------------------
+
+    if query.data.startswith("theme:"):
+
+        await theme_callback(
+            update,
+            context
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # JOIN
+    # -----------------------------------------------------
 
     if query.data == "join":
-
-        if chat_id is None:
-            await query.answer(
-                "Oyun grubu bulunamadı.",
-                show_alert=True,
-            )
-            return
-
-        try:
-            db.add_user(
-                user.id,
-                user.username,
-                user.first_name,
-            )
-        except Exception:
-            pass
 
         result = join_game(
             chat_id,
             user.id,
-            user.first_name,
+            user.first_name
         )
 
         if (
             result is False
             or result == "ALREADY_JOINED"
         ):
+
             await query.answer(
                 "Zaten oyundasın.",
-                show_alert=True,
+                show_alert=True
             )
+
             return
 
         if result == "NO_GAME":
+
             await query.answer(
                 "Oyun bulunamadı.",
-                show_alert=True,
+                show_alert=True
             )
+
             return
 
-        await query.answer(
-            "✅ Oyuna katıldın!"
-        )
+        await query.answer()
 
-        players = games[chat_id]["players"]
+        players = games[
+            chat_id
+        ]["players"]
 
         text = (
-            "🎮 <b>Meyus UNO Lobisi</b>\n\n"
-            f"👥 Oyuncular ({len(players)})\n\n"
+            f"🎮 <b>Meyus UNO Lobisi</b>\n\n"
+            f"👥 Oyuncular "
+            f"({len(players)})\n\n"
         )
 
         for p in players:
+
             text += (
-                f"• {html_escape(p['name'])}\n"
+                f"• "
+                f"{html_escape(p['name'])}\n"
             )
 
         keyboard = [
             [
                 InlineKeyboardButton(
                     "➕ Katıl",
-                    callback_data="join",
+                    callback_data="join"
                 )
             ],
             [
                 InlineKeyboardButton(
                     "▶️ Başlat",
-                    callback_data="start_game",
+                    callback_data="start_game"
                 )
-            ],
+            ]
         ]
 
         await query.edit_message_text(
@@ -668,291 +799,317 @@ async def button(
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(
                 keyboard
-            ),
+            )
         )
 
         return
 
-    # --------------------------------------------------------
-    # BAŞLAT
-    # --------------------------------------------------------
+    # -----------------------------------------------------
+    # START GAME
+    # -----------------------------------------------------
 
     if query.data == "start_game":
 
         if chat_id not in games:
+
             await query.answer(
                 "Oyun bulunamadı.",
-                show_alert=True,
+                show_alert=True
             )
+
             return
 
-        if games[chat_id].get("started"):
+        if games[
+            chat_id
+        ].get("started"):
+
             await query.answer(
                 "Oyun zaten başladı.",
-                show_alert=True,
+                show_alert=True
             )
+
             return
 
         if len(
-            games[chat_id].get("players", [])
+            games[chat_id]["players"]
         ) < 2:
+
             await query.answer(
                 "En az 2 oyuncu gerekli.",
-                show_alert=True,
+                show_alert=True
             )
+
             return
 
         await query.answer(
             "🎉 Oyun başlatılıyor..."
         )
 
-        try:
-            await query.edit_message_text(
-                "🎉 Oyun başlatılıyor..."
-            )
-        except Exception:
-            pass
+        await query.edit_message_text(
+            "🎉 Oyun başlatılıyor..."
+        )
 
         started = await _do_start_game(
             context,
-            chat_id,
+            chat_id
         )
 
         if not started:
+
             await context.bot.send_message(
                 chat_id,
-                (
-                    "❌ Oyun başlatılamadı.\n"
-                    "Lütfen /oyun ile yeni bir lobi oluşturun."
-                ),
+                "❌ Oyun başlatılamadı."
             )
 
         return
 
-    # --------------------------------------------------------
-    # RENK SEÇ
-    # --------------------------------------------------------
+    # -----------------------------------------------------
+    # RENK
+    # -----------------------------------------------------
 
     if query.data.startswith("renk:"):
 
-        try:
-            _, color, target_uid = (
-                query.data.split(":")
-            )
+        _, color, target_uid = (
+            query.data.split(":")
+        )
 
-            target_uid = int(target_uid)
-
-        except Exception:
-            await query.answer(
-                "Geçersiz renk seçimi.",
-                show_alert=True,
-            )
-            return
+        target_uid = int(
+            target_uid
+        )
 
         if user.id != target_uid:
+
             await query.answer(
-                "Sadece kartı oynayan kişi rengi seçebilir.",
-                show_alert=True,
+                "Sadece kartı oynayan kişi "
+                "renk seçebilir.",
+                show_alert=True
             )
+
             return
 
         ok = choose_color(
             chat_id,
             user.id,
-            color,
+            color
         )
 
         if not ok:
+
             await query.answer(
                 "Bu işlem artık geçerli değil.",
-                show_alert=True,
+                show_alert=True
             )
+
             return
 
         await query.answer(
-            f"Renk: {COLOR_NAME_TR.get(color, color)}"
+            f"Renk: "
+            f"{COLOR_NAME_TR.get(color, color)}"
         )
 
-        game = games.get(chat_id)
-
-        if not game:
-            return
+        game = games[
+            chat_id
+        ]
 
         await context.bot.send_message(
             chat_id,
-            (
-                f"🎨 "
-                f"{mention_html(user.id, player_name(game, user.id))} "
-                f"rengi <b>"
-                f"{html_escape(COLOR_NAME_TR.get(color, color))}"
-                f"</b> seçti."
-            ),
-            parse_mode="HTML",
+
+            f"🎨 "
+            f"{mention_html(user.id, player_name(game, user.id))} "
+            f"rengi "
+            f"<b>{COLOR_NAME_TR.get(color, color)}</b> "
+            f"seçti.",
+
+            parse_mode="HTML"
         )
 
         if game.get("winner"):
+
             await finish_game(
                 context,
                 chat_id,
-                game["winner"],
+                game["winner"]
             )
+
         else:
+
             await announce_turn(
                 context,
-                chat_id,
+                chat_id
             )
 
         return
 
 
-# ============================================================
+# =========================================================
 # /KATIL
-# ============================================================
+# =========================================================
 
 async def katil(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
+
     user = update.effective_user
-    chat = update.effective_chat
 
-    if not user or not chat:
-        return
-
-    db.add_user(
+    db.get_or_create_user(
         user.id,
         user.username,
-        user.first_name,
+        user.first_name
     )
 
     result = join_game(
-        chat.id,
+        update.effective_chat.id,
         user.id,
-        user.first_name,
+        user.first_name
     )
 
     if result == "NO_GAME":
+
         await update.message.reply_text(
-            "❌ Önce /oyun komutu ile bir oyun oluşturulmalı."
+            "❌ Önce /oyun komutu ile "
+            "bir oyun oluşturulmalı."
         )
+
         return
 
     if result == "ALREADY_JOINED":
+
         await update.message.reply_text(
             "ℹ️ Zaten oyuna katıldın."
         )
+
         return
 
     oyuncu = len(
-        games[chat.id]["players"]
+        games[
+            update.effective_chat.id
+        ]["players"]
     )
 
     await update.message.reply_text(
-        (
-            f"✅ {html_escape(user.first_name)} "
-            f"oyuna katıldı!\n\n"
-            f"👥 Toplam oyuncu: {oyuncu}"
-        ),
-        parse_mode="HTML",
+        f"✅ "
+        f"{html_escape(user.first_name)} "
+        f"oyuna katıldı!\n\n"
+        f"👥 Toplam oyuncu: "
+        f"{oyuncu}",
+
+        parse_mode="HTML"
     )
 
 
-# ============================================================
-# /BASLAT
-# ============================================================
+# =========================================================
+# /BAŞLAT
+# =========================================================
 
 async def baslat(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
+
     chat_id = update.effective_chat.id
 
     if chat_id not in games:
+
         await update.message.reply_text(
-            "❌ Önce /oyun oluştur."
+            "Önce /oyun oluştur."
         )
+
         return
 
-    if games[chat_id].get("started"):
+    if games[
+        chat_id
+    ].get("started"):
+
         await update.message.reply_text(
             "ℹ️ Oyun zaten başladı."
         )
+
         return
 
     if len(
-        games[chat_id].get("players", [])
+        games[chat_id]["players"]
     ) < 2:
+
         await update.message.reply_text(
-            "❌ En az 2 oyuncu gerekli."
+            "En az 2 oyuncu gerekli."
         )
+
         return
 
     started = await _do_start_game(
         context,
-        chat_id,
+        chat_id
     )
 
     if not started:
+
         await update.message.reply_text(
-            "❌ Oyun başlatılamadı. Lütfen tekrar deneyin."
+            "❌ Oyun başlatılamadı."
         )
 
 
-# ============================================================
+# =========================================================
 # /STICKERLAR
-# ============================================================
+# =========================================================
 
 async def stickerlar(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
+
     try:
+
         sticker_set = await get_sticker_set(
             context.bot,
-            STICKER_SET_NAME,
+            STICKER_SET_NAME
         )
 
     except Exception as e:
+
         await update.message.reply_text(
-            f"❌ Sticker paketi alınamadı:\n{e}"
+            f"❌ Sticker paketi alınamadı: {e}"
         )
+
         return
 
     lines = [
-        (
-            f"📦 Paket: {sticker_set.name} "
-            f"({len(sticker_set.stickers)} sticker)\n"
-        )
+        f"📦 Paket: "
+        f"{sticker_set.name} "
+        f"({len(sticker_set.stickers)} sticker)\n"
     ]
 
-    for idx, sticker in enumerate(
+    for idx, s in enumerate(
         sticker_set.stickers
     ):
+
         lines.append(
-            f"{idx}: {sticker.emoji or '—'}"
+            f"{idx}: "
+            f"{s.emoji or '—'}"
         )
 
     text = "\n".join(lines)
 
-    # Telegram mesaj limiti
     for i in range(
         0,
         len(text),
-        3500,
+        3500
     ):
+
         await update.message.reply_text(
             text[i:i + 3500]
         )
 
 
-# ============================================================
+# =========================================================
 # /CEK
-# ============================================================
+# =========================================================
 
 async def cek(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
+
     user = update.effective_user
 
     chat_id, game = (
@@ -962,72 +1119,83 @@ async def cek(
     )
 
     if not game:
+
         await update.message.reply_text(
             "❌ Aktif bir oyunda değilsin."
         )
+
         return
 
     if chat_id != update.effective_chat.id:
+
         await update.message.reply_text(
-            "❌ Bu komutu oynadığın oyunun grubunda kullan."
+            "❌ Bu komutu oynadığın "
+            "oyunun grubunda kullan."
         )
+
         return
 
     if current_player(chat_id) != user.id:
+
         await update.message.reply_text(
             "⏳ Sıra sende değil."
         )
+
         return
 
     res = draw_card(
         chat_id,
-        user.id,
+        user.id
     )
 
     if not res["ok"]:
+
         await update.message.reply_text(
             "❌ Kart çekilemedi."
         )
+
         return
 
     actor_mention = mention_html(
         user.id,
-        player_name(game, user.id),
+        player_name(game, user.id)
     )
 
     n = len(
-        res.get("drawn", [])
+        res["drawn"]
     )
 
-    if n:
-        await update.message.reply_html(
+    await update.message.reply_html(
+        (
             f"🃏 {actor_mention} "
             f"kart çekti ({n} kart)."
         )
-    else:
-        await update.message.reply_html(
+        if n
+        else
+        (
             f"🃏 {actor_mention} "
             f"çekmek istedi ama deste boş."
         )
+    )
 
     if not game.get("winner"):
+
         await update.message.reply_html(
-            (
-                "Şimdi çektiğin kartı oynayabilir "
-                "ya da /pas ile sırayı geçebilirsin.\n"
-                "Elini görmek için 🎴 butonuna dokun."
-            )
+            "Şimdi çektiğin kartı oynayabilir "
+            "ya da /pas ile sırayı geçebilirsin.\n"
+            "Elini görmek için 🎴 butonuna dokun."
         )
 
 
-# ============================================================
+# =========================================================
 # /PAS
-# ============================================================
+# =========================================================
 
 async def pas(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
+
     user = update.effective_user
 
     chat_id, game = (
@@ -1037,70 +1205,79 @@ async def pas(
     )
 
     if not game:
+
         await update.message.reply_text(
             "❌ Aktif bir oyunda değilsin."
         )
+
         return
 
     if chat_id != update.effective_chat.id:
+
         await update.message.reply_text(
-            "❌ Bu komutu oynadığın oyunun grubunda kullan."
+            "❌ Bu komutu oynadığın "
+            "oyunun grubunda kullan."
         )
+
         return
 
     res = pass_turn(
         chat_id,
-        user.id,
+        user.id
     )
 
     if not res["ok"]:
+
         reasons = {
-            "SIRA_DEGIL": "⏳ Sıra sende değil.",
-            "ONCE_CEK": (
-                "❌ Pas geçmeden önce kart çekmelisin (/cek)."
-            ),
-            "OYUN_YOK": (
-                "❌ Aktif bir oyun bulunamadı."
-            ),
+            "SIRA_DEGIL":
+                "⏳ Sıra sende değil.",
+
+            "ONCE_CEK":
+                "❌ Pas geçmeden önce "
+                "kart çekmelisin (/cek).",
+
+            "OYUN_YOK":
+                "❌ Aktif bir oyun bulunamadı.",
         }
 
         await update.message.reply_text(
             reasons.get(
-                res.get("reason"),
-                "❌ Pas geçilemedi.",
+                res["reason"],
+                "❌ Pas geçilemedi."
             )
         )
+
         return
 
     actor_mention = mention_html(
         user.id,
-        player_name(game, user.id),
+        player_name(game, user.id)
     )
 
     await context.bot.send_message(
         chat_id,
+
         f"⏭ {actor_mention} pas geçti.",
-        parse_mode="HTML",
+
+        parse_mode="HTML"
     )
 
     await announce_turn(
         context,
-        chat_id,
+        chat_id
     )
 
 
-# ============================================================
+# =========================================================
 # INLINE KARTLAR
-# ============================================================
+# =========================================================
 
 async def inline_hand(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
-    inline_query = update.inline_query
 
-    if not inline_query:
-        return
+    inline_query = update.inline_query
 
     user = inline_query.from_user
 
@@ -1110,23 +1287,16 @@ async def inline_hand(
         )
     )
 
-    # --------------------------------------------------------
-    # AKTİF OYUN YOK
-    # --------------------------------------------------------
-
     if not game:
 
-        # switch_pm_text ve switch_pm_parameter
-        # YERİNE yeni Telegram API sistemi:
-        # InlineQueryResultsButton kullanılıyor.
         await inline_query.answer(
             [],
-            button=InlineQueryResultsButton(
-                text="Aktif bir oyunda değilsin",
-                start_parameter="no_game",
+            switch_pm_text=(
+                "Aktif bir oyunda değilsin"
             ),
+            switch_pm_parameter="no_game",
             cache_time=1,
-            is_personal=True,
+            is_personal=True
         )
 
         return
@@ -1136,151 +1306,192 @@ async def inline_hand(
         == user.id
     )
 
-    hand = game.get(
-        "hands",
-        {}
-    ).get(
+    hand = game[
+        "hands"
+    ].get(
         user.id,
-        [],
+        []
     )
 
-    legal = (
-        set(
-            legal_cards_for(
-                chat_id,
-                user.id,
-            )
+    legal = set(
+        legal_cards_for(
+            chat_id,
+            user.id
         )
-        if my_turn
-        else set()
-    )
+    ) if my_turn else set()
 
     cache_chat_id = (
-        STORAGE_CHAT_ID or chat_id
+        STORAGE_CHAT_ID
+        or chat_id
+    )
+
+    theme_id, theme = (
+        get_theme_info(
+            user.id
+        )
+    )
+
+    sticker_set_name = (
+        theme["sticker_set"]
     )
 
     results = []
 
-    # --------------------------------------------------------
+    # -----------------------------------------------------
     # KARTLAR
-    # --------------------------------------------------------
+    # -----------------------------------------------------
 
     for idx, card_code in enumerate(hand):
 
+        is_legal = (
+            my_turn
+            and card_code in legal
+        )
+
+        desc = ""
+
+        if is_legal:
+
+            desc = (
+                "✅ Oynamak için dokun"
+            )
+
+        elif my_turn:
+
+            desc = (
+                "🔘 Şu an oynanamaz"
+            )
+
+        else:
+
+            desc = (
+                "👀 Sadece görüntüleme"
+            )
+
+        # -------------------------------------------------
+        # STICKER TEMA
+        # -------------------------------------------------
+
         sticker_file_id = None
 
-        is_illegal = (
-            my_turn
-            and card_code not in legal
-        )
-
-        result_id_prefix = (
-            "illegal:"
-            if is_illegal
-            else ""
-        )
-
-        # Sticker
-        if card_code in CARD_TO_STICKER_INDEX:
+        if (
+            sticker_set_name
+            and card_code
+            in CARD_TO_STICKER_INDEX
+        ):
 
             try:
+
                 sticker_file_id = (
                     await get_card_sticker_file_id(
                         context.bot,
-                        STICKER_SET_NAME,
+                        sticker_set_name,
                         card_code,
                         CARD_TO_STICKER_INDEX[
                             card_code
-                        ],
+                        ]
                     )
                 )
 
             except Exception as e:
+
                 print(
                     f"⚠️ Sticker alınamadı "
-                    f"({card_code}): {e}"
+                    f"({theme_id}/{card_code}): "
+                    f"{e}"
                 )
 
-        if sticker_file_id:
+        # -------------------------------------------------
+        # OYNANABİLİR STICKER
+        # -------------------------------------------------
+
+        if sticker_file_id and is_legal:
 
             results.append(
                 InlineQueryResultCachedSticker(
-                    id=(
-                        f"{result_id_prefix}"
-                        f"{card_code}#{idx}"
-                    ),
-                    sticker_file_id=sticker_file_id,
+                    id=f"{theme_id}:{card_code}#{idx}",
+                    sticker_file_id=sticker_file_id
                 )
             )
 
             continue
 
-        # Fotoğraf
+        # -------------------------------------------------
+        # NORMAL KART GÖRSELİ
+        # -------------------------------------------------
+
         try:
+
             file_id = await get_card_file_id(
                 context.bot,
                 card_code,
-                cache_chat_id,
+                cache_chat_id
             )
 
         except Exception as e:
+
             print(
                 f"⚠️ Kart görseli yüklenemedi "
                 f"({card_code}): {e}"
             )
+
             continue
 
+        # -------------------------------------------------
+        # OYNANAMAYAN KARTI SİLİKLEŞTİR
+        # -------------------------------------------------
+
+        if my_turn and not is_legal:
+
+            file_id = (
+                await get_dimmed_card_file_id(
+                    context.bot,
+                    card_code,
+                    file_id,
+                    cache_chat_id
+                )
+            )
+
         results.append(
             InlineQueryResultCachedPhoto(
-                id=(
-                    f"{result_id_prefix}"
-                    f"{card_code}#{idx}"
-                ),
+                id=f"{theme_id}:{card_code}#{idx}",
+
                 photo_file_id=file_id,
-            )
-        )
 
-    # --------------------------------------------------------
-    # BİLGİ İKONU
-    # --------------------------------------------------------
-
-    try:
-        info_file_id = (
-            await get_local_icon_file_id(
-                context.bot,
-                INFO_ICON_CODE,
-                info_icon_bytes(),
-            )
-        )
-
-        results.append(
-            InlineQueryResultCachedPhoto(
-                id="info",
-                photo_file_id=info_file_id,
-            )
-        )
-
-    except Exception as e:
-
-        print(
-            f"⚠️ Bilgi ikonu yüklenemedi: {e}"
-        )
-
-        results.append(
-            InlineQueryResultArticle(
-                id="info",
-                title="❓ Kart Durumu",
-                input_message_content=(
-                    InputTextMessageContent(
-                        "❓ Kart durumu"
-                    )
+                title=(
+                    f"🎴 "
+                    f"{card_display_label(card_code)}"
                 ),
+
+                description=desc
             )
         )
 
-    # --------------------------------------------------------
-    # SADECE SIRA BENDeyse
-    # --------------------------------------------------------
+    # -----------------------------------------------------
+    # KART DURUMU
+    # -----------------------------------------------------
+
+    results.append(
+        InlineQueryResultArticle(
+            id="info",
+
+            title="❓ Kart Durumu",
+
+            description=(
+                "Kimde kaç kart olduğunu gruba bildir"
+            ),
+
+            input_message_content=(
+                InputTextMessageContent(
+                    "❓ kart durumu soruldu"
+                )
+            )
+        )
+    )
+
+    # -----------------------------------------------------
+    # KART ÇEK
+    # -----------------------------------------------------
 
     if my_turn:
 
@@ -1290,107 +1501,90 @@ async def inline_hand(
                 {}
             ).get(
                 user.id,
-                False,
+                False
             )
         )
 
-        # Deste
         try:
 
             deck_file_id = (
                 await get_card_file_id(
                     context.bot,
                     DECK_BACK_CODE,
-                    cache_chat_id,
+                    cache_chat_id
                 )
             )
 
             results.append(
                 InlineQueryResultCachedPhoto(
                     id="draw",
+
                     photo_file_id=deck_file_id,
+
+                    title="🃏 Kart Çek",
+
+                    description=(
+                        "Kart çek"
+                    )
                 )
             )
 
         except Exception as e:
 
             print(
-                f"⚠️ Deste görseli yüklenemedi: {e}"
+                f"⚠️ Deste görseli "
+                f"yüklenemedi: {e}"
             )
 
-        # Pas
+        # -------------------------------------------------
+        # PAS
+        # -------------------------------------------------
+
         if has_drawn:
 
-            try:
+            results.append(
+                InlineQueryResultArticle(
+                    id="pass",
 
-                pass_file_id = (
-                    await get_local_icon_file_id(
-                        context.bot,
-                        PASS_ICON_CODE,
-                        pass_icon_bytes(),
+                    title="⏭ Pas Geç",
+
+                    description=(
+                        "Çektiğin kartı "
+                        "oynamak istemiyorsan "
+                        "sırayı geç"
+                    ),
+
+                    input_message_content=(
+                        InputTextMessageContent(
+                            "⏭ pas geçildi"
+                        )
                     )
                 )
-
-                results.append(
-                    InlineQueryResultCachedPhoto(
-                        id="pass",
-                        photo_file_id=pass_file_id,
-                    )
-                )
-
-            except Exception as e:
-
-                print(
-                    f"⚠️ Pas ikonu yüklenemedi: {e}"
-                )
-
-                results.append(
-                    InlineQueryResultArticle(
-                        id="pass",
-                        title="⏭ Pas",
-                        input_message_content=(
-                            InputTextMessageContent(
-                                "⏭ Pas geç"
-                            )
-                        ),
-                    )
-                )
-
-    # --------------------------------------------------------
-    # TELEGRAM'A SONUÇLARI GÖNDER
-    # --------------------------------------------------------
+            )
 
     await inline_query.answer(
         results,
         cache_time=1,
-        is_personal=True,
+        is_personal=True
     )
 
 
-# ============================================================
-# CHOSEN INLINE RESULT
-# ============================================================
+# =========================================================
+# INLINE SONUÇ
+# =========================================================
 
 async def chosen_result(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
-    chosen = update.chosen_inline_result
 
-    if not chosen:
-        return
+    chosen = (
+        update.chosen_inline_result
+    )
 
     user = chosen.from_user
+
     result_id = chosen.result_id
-
-    # --------------------------------------------------------
-    # GEÇERSİZ KART
-    # --------------------------------------------------------
-
-    if result_id.startswith(
-        "illegal:"
-    ):
-        return
 
     chat_id, game = (
         find_active_game_for_user(
@@ -1403,12 +1597,15 @@ async def chosen_result(
 
     actor_mention = mention_html(
         user.id,
-        player_name(game, user.id),
+        player_name(
+            game,
+            user.id
+        )
     )
 
-    # --------------------------------------------------------
-    # INFO
-    # --------------------------------------------------------
+    # -----------------------------------------------------
+    # KART DURUMU
+    # -----------------------------------------------------
 
     if result_id == "info":
 
@@ -1416,149 +1613,151 @@ async def chosen_result(
             "📊 <b>Kart Durumu</b>\n"
         ]
 
-        for p in game.get(
-            "players",
-            []
-        ):
+        for p in game["players"]:
 
             count = len(
-                game.get(
-                    "hands",
-                    {}
-                ).get(
+                game["hands"].get(
                     p["id"],
-                    [],
+                    []
                 )
             )
 
             lines.append(
-                f"• {html_escape(p['name'])}: "
+                f"• "
+                f"{html_escape(p['name'])}: "
                 f"{count} kart"
             )
 
         await context.bot.send_message(
             chat_id,
             "\n".join(lines),
-            parse_mode="HTML",
+            parse_mode="HTML"
         )
 
         return
 
-    # --------------------------------------------------------
+    # -----------------------------------------------------
     # KART ÇEK
-    # --------------------------------------------------------
+    # -----------------------------------------------------
 
     if result_id == "draw":
 
         res = draw_card(
             chat_id,
-            user.id,
+            user.id
         )
 
         if not res["ok"]:
             return
 
         n = len(
-            res.get(
-                "drawn",
-                []
-            )
+            res["drawn"]
         )
 
         await context.bot.send_message(
             chat_id,
+
             (
                 f"🃏 {actor_mention} "
                 f"kart çekti ({n} kart)."
-                if n
-                else
+            )
+            if n
+            else
+            (
                 f"🃏 {actor_mention} "
                 f"çekmek istedi ama deste boş."
             ),
-            parse_mode="HTML",
+
+            parse_mode="HTML"
         )
 
         if not game.get("winner"):
+
             await announce_turn(
                 context,
-                chat_id,
+                chat_id
             )
 
         return
 
-    # --------------------------------------------------------
+    # -----------------------------------------------------
     # PAS
-    # --------------------------------------------------------
+    # -----------------------------------------------------
 
     if result_id == "pass":
 
         res = pass_turn(
             chat_id,
-            user.id,
+            user.id
         )
 
         if not res["ok"]:
 
             reasons = {
-                "SIRA_DEGIL": (
-                    "sıra artık sende değildi"
-                ),
-                "ONCE_CEK": (
-                    "önce kart çekmen gerekiyordu"
-                ),
-                "OYUN_YOK": (
-                    "aktif bir oyun bulunamadı"
-                ),
-            }
+                "SIRA_DEGIL":
+                    "sıra artık sende değildi",
 
-            reason = reasons.get(
-                res.get("reason"),
-                "işlenemedi",
-            )
+                "ONCE_CEK":
+                    "önce kart çekmen gerekiyordu",
+
+                "OYUN_YOK":
+                    "aktif bir oyun bulunamadı",
+            }
 
             await context.bot.send_message(
                 chat_id,
-                (
-                    f"⚠️ {actor_mention} "
-                    f"pas geçmeye çalıştı ama işlenmedi "
-                    f"({reason})."
-                ),
-                parse_mode="HTML",
+
+                f"⚠️ {actor_mention} "
+                f"pas geçmeye çalıştı ama "
+                f"işlenmedi "
+                f"({reasons.get(res['reason'], res['reason'])}).",
+
+                parse_mode="HTML"
             )
 
             return
 
         await context.bot.send_message(
             chat_id,
+
             f"⏭ {actor_mention} pas geçti.",
-            parse_mode="HTML",
+
+            parse_mode="HTML"
         )
 
         await announce_turn(
             context,
-            chat_id,
+            chat_id
         )
 
         return
 
-    # --------------------------------------------------------
-    # KART OYNA
-    # --------------------------------------------------------
+    # -----------------------------------------------------
+    # KART OYNAMA
+    # -----------------------------------------------------
 
-    card_code = result_id.split(
+    # result_id:
+    # theme:card#idx
+
+    raw_id = result_id
+
+    if ":" in raw_id:
+
+        raw_id = raw_id.split(
+            ":",
+            1
+        )[1]
+
+    card_code = raw_id.split(
         "#",
-        1,
+        1
     )[0]
 
     res = play_card(
         chat_id,
         user.id,
-        card_code,
+        card_code
     )
-
-    # --------------------------------------------------------
-    # GEÇERSİZ HAMLE
-    # --------------------------------------------------------
 
     if not res["ok"]:
 
@@ -1567,21 +1766,21 @@ async def chosen_result(
             try:
 
                 await context.bot.edit_message_reply_markup(
+
                     inline_message_id=(
                         chosen.inline_message_id
                     ),
+
                     reply_markup=(
-                        InlineKeyboardMarkup(
+                        InlineKeyboardMarkup([
                             [
-                                [
-                                    InlineKeyboardButton(
-                                        "❌ Geçersiz hamle",
-                                        callback_data="noop",
-                                    )
-                                ]
+                                InlineKeyboardButton(
+                                    "❌ Geçersiz hamle",
+                                    callback_data="noop"
+                                )
                             ]
-                        )
-                    ),
+                        ])
+                    )
                 )
 
             except Exception as e:
@@ -1593,155 +1792,147 @@ async def chosen_result(
 
         return
 
-    # --------------------------------------------------------
-    # KAZANAN
-    # --------------------------------------------------------
+    # -----------------------------------------------------
+    # KAZANDI
+    # -----------------------------------------------------
 
     if res.get("win"):
 
         await finish_game(
             context,
             chat_id,
-            user.id,
+            user.id
         )
 
         return
 
-    # --------------------------------------------------------
+    # -----------------------------------------------------
     # UNO
-    # --------------------------------------------------------
+    # -----------------------------------------------------
 
     if res.get("remaining") == 1:
 
         await context.bot.send_message(
             chat_id,
-            (
-                f"🎉 {actor_mention} "
-                f"<b>UNO!</b> "
-                f"Elinde sadece 1 kart kaldı!"
-            ),
-            parse_mode="HTML",
+
+            f"🎉 {actor_mention} "
+            f"<b>UNO!</b> "
+            f"Elinde sadece 1 kart kaldı!",
+
+            parse_mode="HTML"
         )
 
-    # --------------------------------------------------------
+    # -----------------------------------------------------
     # JOKER RENK SEÇİMİ
-    # --------------------------------------------------------
+    # -----------------------------------------------------
 
     if res.get("needs_color"):
 
         keyboard = [
             [
                 InlineKeyboardButton(
-                    (
-                        f"{COLOR_LABELS[c]} "
-                        f"{COLOR_NAME_TR[c]}"
-                    ),
+                    f"{COLOR_LABELS[c]} "
+                    f"{COLOR_NAME_TR[c]}",
                     callback_data=(
                         f"renk:{c}:{user.id}"
-                    ),
+                    )
                 )
+
                 for c in [
                     "kirmizi",
-                    "yesil",
+                    "yesil"
                 ]
             ],
+
             [
                 InlineKeyboardButton(
-                    (
-                        f"{COLOR_LABELS[c]} "
-                        f"{COLOR_NAME_TR[c]}"
-                    ),
+                    f"{COLOR_LABELS[c]} "
+                    f"{COLOR_NAME_TR[c]}",
                     callback_data=(
                         f"renk:{c}:{user.id}"
-                    ),
+                    )
                 )
+
                 for c in [
                     "mavi",
-                    "sari",
+                    "sari"
                 ]
-            ],
+            ]
         ]
 
         await context.bot.send_message(
             chat_id,
-            (
-                f"🎨 {actor_mention}, "
-                f"joker için bir renk seç:"
+
+            f"🎨 {actor_mention}, "
+            f"joker için bir renk seç:",
+
+            reply_markup=InlineKeyboardMarkup(
+                keyboard
             ),
-            reply_markup=(
-                InlineKeyboardMarkup(
-                    keyboard
-                )
-            ),
-            parse_mode="HTML",
+
+            parse_mode="HTML"
         )
 
         return
 
-    # --------------------------------------------------------
-    # KART ETKİSİ
-    # --------------------------------------------------------
+    # -----------------------------------------------------
+    # ETKİ
+    # -----------------------------------------------------
 
-    effect = res.get(
-        "effect"
-    )
-
-    if effect in (
+    if res.get("effect") in (
         "skip",
-        "reverse",
+        "reverse"
     ):
 
         await announce_effect(
             context,
             chat_id,
             actor_mention,
-            effect,
+            res["effect"]
         )
 
-    elif effect in (
+    elif res.get("effect") in (
         "draw2",
-        "draw4",
+        "draw4"
     ):
 
-        try:
-            next_uid = current_player(
-                chat_id
-            )
+        next_uid = current_player(
+            chat_id
+        )
 
-            next_mention = mention_html(
-                next_uid,
-                player_name(
-                    game,
-                    next_uid,
-                ),
+        next_mention = mention_html(
+            next_uid,
+            player_name(
+                game,
+                next_uid
             )
+        )
 
-            await announce_effect(
-                context,
-                chat_id,
-                actor_mention,
-                effect,
-                next_mention,
-            )
-
-        except Exception:
-            pass
+        await announce_effect(
+            context,
+            chat_id,
+            actor_mention,
+            res["effect"],
+            next_mention
+        )
 
     await announce_turn(
         context,
-        chat_id,
+        chat_id
     )
 
 
-# ============================================================
-# /BITIR
-# ============================================================
+# =========================================================
+# /BİTİR
+# =========================================================
 
 async def bitir(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
+
     chat_id = update.effective_chat.id
+
     user = update.effective_user
 
     if chat_id not in games:
@@ -1752,7 +1943,9 @@ async def bitir(
 
         return
 
-    game = games[chat_id]
+    game = games[
+        chat_id
+    ]
 
     is_owner = (
         game.get("owner")
@@ -1768,13 +1961,16 @@ async def bitir(
             member = (
                 await context.bot.get_chat_member(
                     chat_id,
-                    user.id,
+                    user.id
                 )
             )
 
-            is_admin = member.status in (
-                "administrator",
-                "creator",
+            is_admin = (
+                member.status
+                in (
+                    "administrator",
+                    "creator"
+                )
             )
 
         except Exception:
@@ -1787,205 +1983,129 @@ async def bitir(
     ):
 
         await update.message.reply_text(
-            (
-                "⛔ Sadece oyunu açan kişi "
-                "veya grup yöneticileri "
-                "/bitir kullanabilir."
-            )
+            "⛔ Sadece oyunu açan kişi "
+            "veya grup yöneticileri "
+            "/bitir kullanabilir."
         )
 
         return
 
     was_started = game.get(
         "started",
-        False,
+        False
     )
 
-    try:
-        end_game(chat_id)
-    except Exception as e:
-        print(
-            f"⚠️ Oyun kapatılırken hata: {e}"
-        )
+    end_game(
+        chat_id
+    )
 
-    try:
-        lobby_messages.pop(
-            chat_id,
-            None,
-        )
-    except Exception:
-        pass
+    lobby_messages.pop(
+        chat_id,
+        None
+    )
 
     if was_started:
 
         await update.message.reply_text(
-            (
-                f"🛑 Oyun "
-                f"{html_escape(user.first_name)} "
-                f"tarafından sonlandırıldı.\n\n"
-                f"Yeni oyun için /oyun yazabilirsiniz."
-            ),
-            parse_mode="HTML",
+            f"🛑 Oyun "
+            f"{html_escape(user.first_name)} "
+            f"tarafından sonlandırıldı.\n\n"
+            f"Yeni oyun için /oyun yazabilirsiniz.",
+
+            parse_mode="HTML"
         )
 
     else:
 
         await update.message.reply_text(
-            (
-                f"🛑 Lobi "
-                f"{html_escape(user.first_name)} "
-                f"tarafından kapatıldı.\n\n"
-                f"Yeni oyun için /oyun yazabilirsiniz."
-            ),
-            parse_mode="HTML",
+            f"🛑 Lobi "
+            f"{html_escape(user.first_name)} "
+            f"tarafından kapatıldı.\n\n"
+            f"Yeni oyun için /oyun yazabilirsiniz.",
+
+            parse_mode="HTML"
         )
 
 
-# ============================================================
-# /PROFIL
-# ============================================================
+# =========================================================
+# /PROFİL
+# =========================================================
 
 async def profil(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
+
     user_obj = update.effective_user
 
-    db.add_user(
+    user = db.get_or_create_user(
         user_obj.id,
         user_obj.username,
-        user_obj.first_name,
+        user_obj.first_name
     )
 
-    user = db.get_user(
-        user_obj.id
+    theme_id = (
+        user[8]
+        if len(user) > 8
+        else "meyus"
     )
 
-    if not user:
-
-        await update.message.reply_text(
-            "❌ Profil oluşturulamadı, tekrar dener misin?"
-        )
-
-        return
+    theme_name = CARD_THEMES.get(
+        theme_id,
+        CARD_THEMES["meyus"]
+    )["name"]
 
     await update.message.reply_text(
-        (
-            "👤 <b>Profil</b>\n\n"
-            f"💰 Coin: {user[3]}\n"
-            f"🏆 Galibiyet: {user[4]}\n"
-            f"🎮 Oyun: {user[5]}\n"
-            f"📈 Seviye: {user[6]}\n"
-            f"✨ XP: {user[7]}"
-        ),
-        parse_mode="HTML",
+        f"👤 <b>Profil</b>\n\n"
+        f"💰 Coin: <b>{user[3]}</b>\n"
+        f"🏆 Galibiyet: <b>{user[4]}</b>\n"
+        f"🎮 Oyun: <b>{user[5]}</b>\n"
+        f"⭐ Seviye: <b>{user[6]}</b>\n"
+        f"✨ XP: <b>{user[7]}</b>\n"
+        f"🎨 Tema: <b>{theme_name}</b>",
+
+        parse_mode="HTML"
     )
 
 
-# ============================================================
-# /SIRALAMA
-# ============================================================
-
-async def siralama(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    top = db.get_weekly_leaderboard(
-        10
-    )
-
-    if not top:
-
-        await update.message.reply_text(
-            "🎮 Bu hafta henüz kimse oyun bitirmedi."
-        )
-
-        return
-
-    madalya = [
-        "🥇",
-        "🥈",
-        "🥉",
-    ]
-
-    lines = [
-        "🏆 <b>Haftalık Sıralama</b> "
-        "(İlk 10)\n"
-    ]
-
-    for i, (
-        uid,
-        name,
-        wins,
-        games_count,
-    ) in enumerate(top):
-
-        rank = (
-            madalya[i]
-            if i < 3
-            else f"{i + 1}."
-        )
-
-        lines.append(
-            (
-                f"{rank} "
-                f"{html_escape(name)} — "
-                f"🏆 {wins} galibiyet "
-                f"({games_count} oyun)"
-            )
-        )
-
-    await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode="HTML",
-    )
-
-
-# ============================================================
+# =========================================================
 # /YARDIM
-# ============================================================
+# =========================================================
 
 async def yardim(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update,
+    context
 ):
-    text = (
-        "📖 <b>Meyus UNO Yardım</b>\n\n"
-        "/start — Botu başlatır\n"
-        "/oyun — Yeni oyun oluşturur\n"
-        "/katil — Oyuna katılır\n"
-        "/baslat — Oyunu başlatır\n"
-        "/bitir — Oyunu/lobiyi sonlandırır\n"
-        "/profil — Profilini gösterir\n"
-        "/siralama — Haftalık sıralamayı gösterir\n"
-        "/cek — Sıra sendeyken kart çeker\n"
-        "/pas — Kart çektikten sonra sırayı geçer\n\n"
-        "🎴 Her an "
-        "<b>Kartlarımı Gör / Oyna</b> "
-        "butonuna dokunarak elini görebilirsin.\n\n"
-        "🎯 Sıra sende olduğunda oynanabilir "
-        "kartlar, deste ve pas seçeneği "
-        "otomatik olarak görünür."
-    )
 
     await update.message.reply_text(
-        text,
-        parse_mode="HTML",
+        "📖 <b>Meyus UNO Yardım</b>\n\n"
+        "/start - Botu başlatır\n"
+        "/oyun - Yeni oyun oluşturur\n"
+        "/katil - Oyuna katılır\n"
+        "/baslat - Oyunu başlatır\n"
+        "/bitir - Oyunu/lobiyi sonlandırır\n"
+        "/profil - Profilini gösterir\n"
+        "/tema - Kart temasını seçer\n"
+        "/cek - Sıra sendeyken kart çeker\n"
+        "/pas - Kart çektikten sonra pas geçer\n\n"
+        "🎴 Kartlarımı Gör / Oyna butonuyla "
+        "elini görebilirsin.\n\n"
+        "🟢 Oynanabilir kartlar normal görünür.\n"
+        "🔘 Oynanamayan kartlar silik görünür.\n"
+        "🎨 Seçtiğin tema yalnızca senin kartlarını etkiler.",
+
+        parse_mode="HTML"
     )
 
 
-# ============================================================
+# =========================================================
 # CHAT MIGRATION
-# ============================================================
+# =========================================================
 
 def _migrate_chat(
     old_chat_id,
-    new_chat_id,
+    new_chat_id
 ):
-    """
-    Grup süper gruba yükseltilince
-    oyun/lobi verisini yeni chat_id'ye taşır.
-    """
 
     if old_chat_id in games:
 
@@ -1993,21 +2113,22 @@ def _migrate_chat(
             old_chat_id
         )
 
-        games[new_chat_id] = game
+        games[
+            new_chat_id
+        ] = game
 
         for uid in game.get(
             "hands",
             {}
         ).keys():
 
-            if (
-                user_active_chat.get(uid)
-                == old_chat_id
-            ):
+            if user_active_chat.get(
+                uid
+            ) == old_chat_id:
 
-                user_active_chat[uid] = (
-                    new_chat_id
-                )
+                user_active_chat[
+                    uid
+                ] = new_chat_id
 
     if old_chat_id in lobby_messages:
 
@@ -2018,19 +2139,20 @@ def _migrate_chat(
         )
 
 
-# ============================================================
+# =========================================================
 # ERROR HANDLER
-# ============================================================
+# =========================================================
 
 async def error_handler(
     update,
-    context,
+    context
 ):
+
     err = context.error
 
     if isinstance(
         err,
-        ChatMigrated,
+        ChatMigrated
     ):
 
         old_chat_id = None
@@ -2040,7 +2162,7 @@ async def error_handler(
             and getattr(
                 update,
                 "effective_chat",
-                None,
+                None
             )
         ):
 
@@ -2056,24 +2178,21 @@ async def error_handler(
 
             _migrate_chat(
                 old_chat_id,
-                new_chat_id,
+                new_chat_id
             )
 
         try:
 
             await context.bot.send_message(
                 new_chat_id,
-                (
-                    "ℹ️ Bu grup süper gruba yükseltildi.\n\n"
-                    "Oyun verisi yeni gruba taşındı.\n"
-                    "Devam etmek için tekrar "
-                    "🎴 <b>Kartlarımı Gör / Oyna</b> "
-                    "butonuna dokunabilirsiniz."
-                ),
-                parse_mode="HTML",
+
+                "ℹ️ Bu grup süper gruba "
+                "yükseltildi.\n\n"
+                "Oyun verisi yeni gruba taşındı."
             )
 
         except Exception:
+
             pass
 
         return
@@ -2083,19 +2202,11 @@ async def error_handler(
     )
 
 
-# ============================================================
+# =========================================================
 # MAIN
-# ============================================================
+# =========================================================
 
 def main():
-
-    if not BOT_TOKEN:
-
-        print(
-            "❌ BOT_TOKEN bulunamadı!"
-        )
-
-        return
 
     app = (
         Application
@@ -2104,101 +2215,92 @@ def main():
         .build()
     )
 
-    # --------------------------------------------------------
-    # KOMUTLAR
-    # --------------------------------------------------------
-
+    # Komutlar
     app.add_handler(
         CommandHandler(
             "start",
-            start,
+            start
         )
     )
 
     app.add_handler(
         CommandHandler(
             "yardim",
-            yardim,
+            yardim
         )
     )
 
     app.add_handler(
         CommandHandler(
             "oyun",
-            oyun,
+            oyun
         )
     )
 
     app.add_handler(
         CommandHandler(
             "katil",
-            katil,
+            katil
         )
     )
 
     app.add_handler(
         CommandHandler(
             "baslat",
-            baslat,
+            baslat
         )
     )
 
     app.add_handler(
         CommandHandler(
             "bitir",
-            bitir,
+            bitir
         )
     )
 
     app.add_handler(
         CommandHandler(
             "profil",
-            profil,
+            profil
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "tema",
+            tema
         )
     )
 
     app.add_handler(
         CommandHandler(
             "cek",
-            cek,
+            cek
         )
     )
 
     app.add_handler(
         CommandHandler(
             "pas",
-            pas,
+            pas
         )
     )
 
     app.add_handler(
         CommandHandler(
             "stickerlar",
-            stickerlar,
+            stickerlar
         )
     )
 
-    app.add_handler(
-        CommandHandler(
-            "siralama",
-            siralama,
-        )
-    )
-
-    # --------------------------------------------------------
-    # CALLBACK
-    # --------------------------------------------------------
-
+    # Callback
     app.add_handler(
         CallbackQueryHandler(
             button
         )
     )
 
-    # --------------------------------------------------------
-    # INLINE MODE
-    # --------------------------------------------------------
-
+    # Inline
     app.add_handler(
         InlineQueryHandler(
             inline_hand
@@ -2211,10 +2313,7 @@ def main():
         )
     )
 
-    # --------------------------------------------------------
-    # ERROR
-    # --------------------------------------------------------
-
+    # Hatalar
     app.add_error_handler(
         error_handler
     )
@@ -2223,18 +2322,8 @@ def main():
         "✅ Meyus UNO başlatıldı!"
     )
 
-    # --------------------------------------------------------
-    # POLLING
-    # --------------------------------------------------------
+    app.run_polling()
 
-    app.run_polling(
-        drop_pending_updates=True
-    )
-
-
-# ============================================================
-# BAŞLAT
-# ============================================================
 
 if __name__ == "__main__":
     main()
