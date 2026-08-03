@@ -3,10 +3,10 @@ from game import *
 from cards_data import (
     card_display_label, DECK_BACK_CODE,
     COLOR_NAME_TR, COLOR_LABELS, ALL_CARD_CODES,
-    PASS_ICON_CODE, INFO_ICON_CODE,
+    PASS_ICON_CODE, INFO_ICON_CODE, LOCKED_ICON_CODE,
 )
 from card_cache import get_card_file_id, get_local_icon_file_id, prewarm_all_cards
-from icon_assets import pass_icon_bytes, info_icon_bytes
+from icon_assets import pass_icon_bytes, info_icon_bytes, locked_icon_bytes
 from sticker_cache import get_sticker_set, get_card_sticker_file_id
 from card_sticker_map import get_card_map_for_theme
 from themes import THEMES, DEFAULT_THEME, get_theme_by_id
@@ -552,13 +552,31 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     results = []
     for idx, card_code in enumerate(hand):
-        sticker_file_id = None
         is_illegal = my_turn and card_code not in legal
-        # Geçersiz kart olsa bile GERÇEK kart görselini gösteriyoruz (Article
-        # tipi Telegram'da düzgün önizleme veremediği için gri/bozuk ikon
-        # çıkıyordu). Sadece id'yi "illegal:" ile işaretliyoruz; seçilse bile
-        # chosen_result bunu tanıyıp hiçbir şey yapmadan çıkacak (pasif kart).
         result_id_prefix = "illegal:" if is_illegal else ""
+
+        if is_illegal:
+            # O an oynanamayacak kartlar için gerçek görsel yerine tek tip
+            # soluk/kilitli bir ikon gösteriyoruz. Böylece hangi kart olduğu
+            # görsel olarak belirsizleşir ve "dokunulamaz" hissi verir
+            # (Telegram inline sonuçları teknik olarak hep seçilebilir olsa
+            # da, seçilse bile chosen_result bunu "illegal:" ön ekinden
+            # tanıyıp oyuna hiçbir etkisi olmadan sessizce çıkar).
+            try:
+                locked_file_id = await get_local_icon_file_id(
+                    context.bot, LOCKED_ICON_CODE, locked_icon_bytes()
+                )
+                results.append(
+                    InlineQueryResultCachedPhoto(
+                        id=f"{result_id_prefix}{card_code}#{idx}",
+                        photo_file_id=locked_file_id,
+                    )
+                )
+            except Exception as e:
+                print(f"⚠️ Kilitli kart ikonu yüklenemedi: {e}")
+            continue
+
+        sticker_file_id = None
 
         if card_code in theme_card_map:
             try:
