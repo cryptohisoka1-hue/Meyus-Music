@@ -1,50 +1,101 @@
+"""
+Meyus UNO - Telegram Bot
+Pas Geç ve Bilgi ikonları
+
+Bu dosya ikonları base64 olarak saklar ve Telegram'a
+BytesIO üzerinden gönderilebilmesini sağlar.
+
+Kullanım:
+    from icon_assets_EKLE import pass_icon_bytes, info_icon_bytes
+"""
+
+import base64
+from io import BytesIO
+
+
 # ============================================================
-# AŞAĞIDAKİ BLOĞU mevcut icon_assets.py dosyasının EN SONUNA ekle
-# (yani info_icon_bytes() fonksiyonundan sonra).
-# Dosyanın başındaki "import base64" zaten var, tekrar eklemene gerek yok.
+# PAS GEÇ İKONU
 # ============================================================
 
-LOCKED_ICON_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAfQAAALWCAYAAACwWmEqAAAQp0lEQVR4nO3dO3YbRxqAUXgOdzKJY0UOtCYlxjLg"
-    "xGtS4Eixk9nLRLRoSiTxqH7U1/emkoBCo09/+qtxgNMJAAAAAAAAAAAAAAAAAAAAvvtl6wVc68uX3//aeg0AHNOf"
-    "f/7x29Zr+Mhugy7gAOzVHgO/q6CLOACz2UvcNw+6iANQsWXcNwu6kANQtUXYVw+6kANwFGuG/T9rPdHpJOYAHMua"
-    "3VtlQhdyAI5u6Wl98QldzAFg+R4uGnQxB4DvluziIlvuSy3427dvfy/xuADwlk+fPv26xOOO3oIfHvSRMRdwAPZm"
-    "ZOBHRn1o0EfEXMQBmMWIuI+K+rCgPxpzIQdgVo+GfUTUnx59gEcJOQCze27ZUvfbrzHkU+73TudiDkDJvV0bccv6"
-    "4aCLOQB8t1XUH7qHfs+TCzkAR3HPFvy999NX/S53MQfgSNbs3t1Bv3U6F3MAjujW/t279X5X0MUcAK63RtRX3XIH"
-    "AJZxc9BN5wBwu6Wn9EUndDEHgO+W7OJNQb/lfwtiDgA/uqWPt3TXPXQACFgk6KZzAHjbEp28Ougjf+ccALjOtf0d"
-    "PqGbzgHgY6N76R46AARcFXTb7QCwnWs6PHRCt90OANcb2U1b7gAQIOgAEPBh0N0/B4DtfdTjYRO6++cAcLtR/bTl"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4CAYUH/9OnTr6MeCwCOYlQ/Pwz6n3/+8duIJwIA7vdRj225"
-    "A0CAoANAwNCgu48OANcb2c2rgu4+OgBs55oO23IHgIDhQbftDgAfG93Lq4Nu2x0A1ndtfxfZcjelA8Dbluike+gA"
-    "EHBT0G/ZdjelA8CPbunjLd1ddEIXdQD4bsku3hz0Wz8cJ+oAcHsPb+2te+gAEHBX0E3pAHC9pafz0+mBCV3UAeBj"
-    "a8T8dFp5y13UATiSNbv3y6MP8OXL73/d8+++ffv296PPDQB7dG/IH/lW1ocn9Huf3LQOQNEWMT+dBm25izoAbBfz"
-    "0+l0enr0AR71/OJtwQMwqz0MqA/fQ3/p3vvpLwk7ALMYEfJRv2Y6NOin05ioPxN3APZm5DQ+8qfJhwf9dBob9ZcE"
-    "HoC1LbWdPjLmp9NCQX+2VNgBYFajQ/5s0S+WWWrRADCjJbu4+DfFiToALN/DRbfcX7MFD8DRrDXYrvpd7qZ1AI5k"
-    "ze6tOqG/ZFoHoGqLAXazoD8TdgAqttyJ3jzoL4k7ALPZy+3kXQX9JXEHYK/2EvGXdhv01wQegK3sMeAAAAAAAAAA"
-    "AAAAAAAAsKD/AykxZ1GSX9rHAAAAAElFTkSuQmCC"
+PASS_ICON_B64 = (
+    # Buraya PAS ikonunun base64 verisi gelecek.
+    # Örnek:
+    # "iVBORw0KGgoAAAANSUhEUgAA..."
+    ""
 )
 
 
-def locked_icon_bytes():
-    """Soluk/kilitli kart ikonunun PNG bayt verisini döndürür.
+# ============================================================
+# BİLGİ İKONU
+# ============================================================
 
-    Geçersiz (o an oynanamayacak) kartlar için, kartın gerçek görseli yerine
-    bu tek tip soluk/kilitli görsel gösterilir.
+INFO_ICON_B64 = (
+    # Buraya BİLGİ ikonunun base64 verisi gelecek.
+    # Örnek:
+    # "iVBORw0KGgoAAAANSUhEUgAA..."
+    ""
+)
+
+
+# ============================================================
+# BYTESIO YARDIMCISI
+# ============================================================
+
+def _base64_to_bytesio(data: str, name: str) -> BytesIO:
     """
-    return base64.b64decode(LOCKED_ICON_B64)
-  
+    Base64 verisini Telegram tarafından kullanılabilecek
+    BytesIO nesnesine dönüştürür.
+    """
+
+    if not data:
+        raise ValueError(
+            f"{name} base64 verisi boş. "
+            f"{name}_B64 değişkenine ikonun base64 verisini ekleyin."
+        )
+
+    try:
+        raw = base64.b64decode(data)
+    except Exception as exc:
+        raise ValueError(
+            f"{name} base64 verisi geçersiz."
+        ) from exc
+
+    stream = BytesIO(raw)
+    stream.name = f"{name.lower()}.png"
+    stream.seek(0)
+
+    return stream
+
+
+# ============================================================
+# TELEGRAM'DA KULLANILACAK İKONLAR
+# ============================================================
+
+def get_pass_icon():
+    """Pas geç ikonunu BytesIO olarak döndürür."""
+    return _base64_to_bytesio(
+        PASS_ICON_B64,
+        "PASS_ICON"
+    )
+
+
+def get_info_icon():
+    """Bilgi ikonunu BytesIO olarak döndürür."""
+    return _base64_to_bytesio(
+        INFO_ICON_B64,
+        "INFO_ICON"
+    )
+
+
+# ============================================================
+# MAIN.PY UYUMLULUĞU
+# ============================================================
+
+# main.py şu şekilde kullanıyorsa:
+#
+# from icon_assets_EKLE import pass_icon_bytes, info_icon_bytes
+#
+# aşağıdaki değişkenler hazırdır.
+
+pass_icon_bytes = get_pass_icon()
+info_icon_bytes = get_info_icon()
