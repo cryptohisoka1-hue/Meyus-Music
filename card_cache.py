@@ -89,47 +89,18 @@ def get_cached_file_id(card_code):
     return _file_id_cache.get(card_code)
 
 
-# ─── ANA FONKSİYON ───
-async def get_card_file_id(bot, card_code, chat_id):
-    """Kart görselini indirip Telegram'a gönderir, file_id döndürür.
+async def _upload_bytes_and_cache(bot, card_code, image_data):
+    """Verilen görsel baytını depo kanalına gönderip file_id'yi cache'ler.
 
-    NOT: `chat_id` parametresi geriye dönük uyumluluk için duruyor ama
-    KULLANILMIYOR. Görseller her zaman STORAGE_CHAT_ID'ye gönderilir,
-    böylece oyunun oynandığı gruba asla kart görseli sızmaz.
+    get_card_file_id ve get_local_icon_file_id tarafından ortak kullanılan
+    gönderim/retry mantığı.
     """
-    # Önce bellek içi cache'e bak
-    if card_code in _file_id_cache:
-        return _file_id_cache[card_code]
-
     if not STORAGE_CHAT_ID:
         raise RuntimeError(
             "STORAGE_CHAT_ID ayarlanmamış! Railway Variables kısmına "
             "STORAGE_CHAT_ID eklenmeli (bkz. card_cache.py başındaki açıklama)."
         )
 
-    from cards_data import card_image_url
-    url = card_image_url(card_code)
-
-    # Görseli indir (timeout / ağ hatalarında birkaç kez tekrar dene)
-    image_data = None
-    last_err = None
-    for attempt in range(_MAX_RETRIES):
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(30, connect=15)) as client:
-                resp = await client.get(url)
-                if resp.status_code != 200:
-                    raise Exception(f"HTTP {resp.status_code}: {url}")
-                image_data = resp.content
-            break
-        except Exception as e:
-            last_err = e
-            print(f"⚠️ Kart görseli indirilemedi ({card_code}), deneme {attempt + 1}/{_MAX_RETRIES}: {e}")
-            await asyncio.sleep(1.5 * (attempt + 1))
-
-    if image_data is None:
-        raise last_err or Exception(f"Görsel indirilemedi: {card_code}")
-
-    # Telegram'a gizli depo kanalına gönder ve file_id al
     for attempt in range(_MAX_RETRIES):
         try:
             async with _send_lock:
@@ -177,12 +148,68 @@ async def get_card_file_id(bot, card_code, chat_id):
     raise Exception(f"Kart gönderilemedi, tüm denemeler tükendi: {card_code}")
 
 
+# ─── ANA FONKSİYON ───
+async def get_card_file_id(bot, card_code, chat_id):
+    """Kart görselini indirip Telegram'a gönderir, file_id döndürür.
+
+    NOT: `chat_id` parametresi geriye dönük uyumluluk için duruyor ama
+    KULLANILMIYOR. Görseller her zaman STORAGE_CHAT_ID'ye gönderilir,
+    böylece oyunun oynandığı gruba asla kart görseli sızmaz.
+    """
+    # Önce bellek içi cache'e bak
+    if card_code in _file_id_cache:
+        return _file_id_cache[card_code]
+
+    from cards_data import card_image_url
+    url = card_image_url(card_code)
+
+    # Görseli indir (timeout / ağ hatalarında birkaç kez tekrar dene)
+    image_data = None
+    last_err = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30, connect=15)) as client:
+                resp = await client.get(url)
+                if resp.status_code != 200:
+                    raise Exception(f"HTTP {resp.status_code}: {url}")
+                image_data = resp.content
+            break
+        except Exception as e:
+            last_err = e
+            print(f"⚠️ Kart görseli indirilemedi ({card_code}), deneme {attempt + 1}/{_MAX_RETRIES}: {e}")
+            await asyncio.sleep(1.5 * (attempt + 1))
+
+    if image_data is None:
+        raise last_err or Exception(f"Görsel indirilemedi: {card_code}")
+
+    return await _upload_bytes_and_cache(bot, card_code, image_data)
+
+
+# ─── YEREL (KOD İÇİNE GÖMÜLÜ) İKONLAR ───
+async def get_local_icon_file_id(bot, card_code, image_bytes):
+    """GitHub'dan indirmeye gerek kalmadan, doğrudan kod içine gömülü PNG
+    baytlarını depo kanalına gönderip file_id döndürür ve cache'ler.
+
+    `image_bytes`: PNG dosyasının ham bayt verisi (örn. icon_assets.py
+    içindeki pass_icon_bytes()/info_icon_bytes() fonksiyonlarından gelir).
+    """
+    if card_code in _file_id_cache:
+        return _file_id_cache[card_code]
+
+    return await _upload_bytes_and_cache(bot, card_code, image_bytes)
+
+
 # ─── ÖN ISITMA (PREWARM) ───
 async def prewarm_all_cards(bot, chat_id, card_codes):
     """Tüm kartları arka planda önbelleğe alır.
 
     get_card_file_id zaten throttle + retry yaptığı için burada sıralı
     (paralel değil) şekilde çağırmak yeterli ve güvenli.
+
+    NOT: pas_ikon / bilgi_ikon gibi yerel (base64 gömülü) ikonlar bu
+    fonksiyon tarafından ele alınmaz — onlar get_local_icon_file_id ile
+    main.py içinde ayrıca önbelleğe alınır, çünkü card_image_url() ile
+    indirilebilecek bir GitHub görselleri değildir.
     """
     missing = [c for c in card_codes if c not in _file_id_cache]
     if not missing:
@@ -197,4 +224,4 @@ async def prewarm_all_cards(bot, chat_id, card_codes):
             print(f"⚠️ Önbellekleme atlandı ({code}): {e}")
 
     print(f"🏁 Önbellekleme tamamlandı. Toplam cache: {len(_file_id_cache)} kart.")
-            
+    
