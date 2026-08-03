@@ -1,10 +1,19 @@
-# classic_colorblind sticker seti (54 sticker)
-# Emoji hepsi 🃏 olduğu için eşleme, sticker paketinin GÖRSEL olarak
-# (t.me/addstickers/classic_colorblind) tek tek incelenmesiyle çıkarıldı.
+# Kart kodu -> sticker index eşlemesi, TEMA BAŞINA ayrı bir sözlük olarak tutulur.
+#
+# Yeni bir tema eklerken:
+#   1) /stickerlar <paket_adı>  komutuyla paketin içeriğini (index + emoji) listele
+#   2) Paketi Telegram'da (t.me/addstickers/<paket_adı>) açıp stickerleri GÖRSEL
+#      olarak tek tek incele (emoji'ler genelde ayırt edici değildir, hepsi 🃏 olabilir)
+#   3) Aşağıya THEME_CARD_MAPS içine yeni bir "tema_id": {...} girdisi ekle
+#
+# Bir tema için eşleme boş bırakılırsa ({}), o tema seçilebilir ama sticker
+# gösteremez; sistem otomatik olarak normal kart görseline (fotoğraf) düşer,
+# yani hiçbir şey bozulmaz.
+
+# --- classic_colorblind: 54 sticker ---
 # Gerçek sıra: Joker(0-1) → Kırmızı(2-14) → Yeşil(15-27) → Mavi(28-40) → Sarı(41-53)
 # Her renk grubu içinde sıra: 0,1,2,3,4,5,6,7,8,9,arti2,yon,dur
-
-CARD_TO_STICKER_INDEX = {
+_CLASSIC_COLORBLIND_MAP = {
     # Jokerler (0-1)
     "wild_renk":     0,
     "wild_artidort": 1,
@@ -69,3 +78,32 @@ CARD_TO_STICKER_INDEX = {
     "sari_yon":   52,
     "sari_dur":   53,
 }
+
+# --- Yeni temalar: eşlemeleri henüz çıkarılmadı ---
+# Her paketin gerçek sticker sırası görsel olarak incelenip doldurulmalı.
+# Doldurulana kadar boş kalabilir; kod otomatik olarak foto karta düşer.
+_CAT_ARYA_MAP = {}
+_PRINCESS_ARYA_MAP = {}
+_BJK_ARYA_MAP = {}
+_GS_ARYA_MAP = {}
+_ARYA_FB_THEME_PACK_MAP = {}
+_WOLF_ARYA_MAP = {}
+
+THEME_CARD_MAPS = {
+    "classic_colorblind": _CLASSIC_COLORBLIND_MAP,
+    "cat_arya": _CAT_ARYA_MAP,
+    "princess_arya": _PRINCESS_ARYA_MAP,
+    "bjk_arya": _BJK_ARYA_MAP,
+    "gs_arya": _GS_ARYA_MAP,
+    "arya_fb_theme_pack": _ARYA_FB_THEME_PACK_MAP,
+    "wolf_arya": _WOLF_ARYA_MAP,
+}
+
+# Geriye dönük uyumluluk: eski kodun import ettiği isim, klasik temayı gösterir.
+CARD_TO_STICKER_INDEX = _CLASSIC_COLORBLIND_MAP
+
+
+def get_card_map_for_theme(theme_id):
+    """Verilen tema için kart eşleme sözlüğünü döndürür (yoksa klasik temaya düşer)."""
+    return THEME_CARD_MAPS.get(theme_id, _CLASSIC_COLORBLIND_MAP)
+    
