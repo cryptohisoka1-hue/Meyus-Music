@@ -171,8 +171,11 @@ async def _do_start_game(context, chat_id):
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.message.chat.id
+    chat_id = query.message.chat.id if query.message else None
     user = query.from_user
+    if query.data == "noop":
+        await query.answer("Bu hamle geçersizdi, işlenmedi.", show_alert=True)
+        return
     if query.data == "join":
         result = join_game(chat_id, user.id, user.first_name)
         if result is False or result == "ALREADY_JOINED":
@@ -503,7 +506,20 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     card_code = result_id.split("#", 1)[0]
     res = play_card(chat_id, user.id, card_code)
     if not res["ok"]:
-        # Geçersiz hamle: gruba herhangi bir bildirim gönderilmez, kart sessizce işlevsiz kalır.
+        # Gruba bildirim göndermek yerine, mesajın üzerine küçük bir
+        # "❌ Geçersiz" etiketi ekleyip kartı işlevsiz bırakıyoruz.
+        # (Telegram inline mesajı seçildiği an gönderdiği için mesajın
+        # kendisini engellemek mümkün değil, sadece işaretleyebiliyoruz.)
+        if chosen.inline_message_id:
+            try:
+                await context.bot.edit_message_reply_markup(
+                    inline_message_id=chosen.inline_message_id,
+                    reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("❌ Geçersiz hamle", callback_data="noop")]]
+                    ),
+                )
+            except Exception as e:
+                print(f"⚠️ Geçersiz kart işaretlenemedi: {e}")
         return
     if res.get("win"):
         await finish_game(context, chat_id, user.id)
