@@ -503,7 +503,7 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
         return
-   if result_id == "draw":
+    if result_id == "draw":
         res = draw_card(chat_id, user.id)
         if not res["ok"]:
             return
