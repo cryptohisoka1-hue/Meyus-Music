@@ -38,7 +38,8 @@ class Database:
                     wins INTEGER DEFAULT 0,
                     games INTEGER DEFAULT 0,
                     level INTEGER DEFAULT 1,
-                    xp INTEGER DEFAULT 0
+                    xp INTEGER DEFAULT 0,
+                    theme TEXT DEFAULT 'meyus'
                 )
             """)
 
@@ -53,6 +54,19 @@ class Database:
                     PRIMARY KEY (user_id, week_start)
                 )
             """)
+
+            # Eski veritabanlarında theme sütunu yoksa ekle.
+            columns = [
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(users)"
+                ).fetchall()
+            ]
+
+            if "theme" not in columns:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'meyus'"
+                )
 
             conn.commit()
 
@@ -74,7 +88,8 @@ class Database:
                     wins,
                     games,
                     level,
-                    xp
+                    xp,
+                    theme
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -97,14 +112,21 @@ class Database:
                 INSERT INTO users (
                     user_id,
                     username,
-                    first_name
+                    first_name,
+                    theme
                 )
-                VALUES (?, ?, ?)
+                VALUES (?, ?, ?, 'meyus')
 
                 ON CONFLICT(user_id)
                 DO UPDATE SET
-                    username = COALESCE(excluded.username, users.username),
-                    first_name = COALESCE(excluded.first_name, users.first_name)
+                    username = COALESCE(
+                        excluded.username,
+                        users.username
+                    ),
+                    first_name = COALESCE(
+                        excluded.first_name,
+                        users.first_name
+                    )
                 """,
                 (
                     user_id,
@@ -129,6 +151,63 @@ class Database:
         )
 
         return self.get_user(user_id)
+
+    # ---------------------------------------------------------
+    # TEMA
+    # ---------------------------------------------------------
+
+    def get_theme(self, user_id):
+        """
+        Kullanıcının seçtiği temayı döndürür.
+
+        Kullanıcı yoksa varsayılan:
+        meyus
+        """
+
+        user = self.get_user(user_id)
+
+        if not user:
+            self.add_user(user_id)
+            return "meyus"
+
+        # users:
+        # 0 user_id
+        # 1 username
+        # 2 first_name
+        # 3 coins
+        # 4 wins
+        # 5 games
+        # 6 level
+        # 7 xp
+        # 8 theme
+
+        return user[8] or "meyus"
+
+    def set_theme(self, user_id, theme):
+        """
+        Kullanıcının temasını kaydeder.
+        """
+
+        if not self.get_user(user_id):
+            self.add_user(user_id)
+
+        with sqlite3.connect(self.db_path) as conn:
+
+            conn.execute(
+                """
+                UPDATE users
+                SET theme = ?
+                WHERE user_id = ?
+                """,
+                (
+                    theme,
+                    user_id
+                )
+            )
+
+            conn.commit()
+
+        return True
 
     # ---------------------------------------------------------
     # HAFTALIK KAYIT
@@ -181,7 +260,6 @@ class Database:
         first_name=None
     ):
 
-        # Kullanıcı yoksa otomatik oluştur
         if not self.get_user(user_id):
 
             self.add_user(
@@ -352,7 +430,6 @@ class Database:
                 )
             )
 
-            # Her 100 XP = 1 seviye
             conn.execute(
                 """
                 UPDATE users
