@@ -31,9 +31,16 @@ class Database:
                     wins INTEGER DEFAULT 0,
                     games INTEGER DEFAULT 0,
                     level INTEGER DEFAULT 1,
-                    xp INTEGER DEFAULT 0
+                    xp INTEGER DEFAULT 0,
+                    theme TEXT DEFAULT 'classic_colorblind'
                 )
             """)
+            # Eski veritabanlarında theme sütunu olmayabilir, varsa hata vermeden geç
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'classic_colorblind'")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS weekly_stats (
                     user_id INTEGER,
@@ -112,6 +119,23 @@ class Database:
             conn.execute(
                 "UPDATE users SET level = (xp / 100) + 1 WHERE user_id = ?",
                 (user_id,)
+            )
+            conn.commit()
+
+    def get_theme(self, user_id):
+        """Kullanıcının seçtiği temayı döndürür (kayıtlı değilse varsayılan)."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute("SELECT theme FROM users WHERE user_id = ?", (user_id,))
+            row = cur.fetchone()
+            if row and row[0]:
+                return row[0]
+            return "classic_colorblind"
+
+    def set_theme(self, user_id, theme_id):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE users SET theme = ? WHERE user_id = ?",
+                (theme_id, user_id)
             )
             conn.commit()
 
