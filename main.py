@@ -383,18 +383,11 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sticker_file_id = None
         is_illegal = my_turn and card_code not in legal
 
-        # Sıra bende ve bu kart oynanamıyorsa: kartı görsel olarak göstermek yerine
-        # yazısız, işlevsiz (pasif) bir sonuç koyuyoruz. Seçilse bile chosen_result
-        # bunu "illegal:" önekinden tanıyıp hiçbir şey yapmadan çıkacak.
-        if is_illegal:
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"illegal:{card_code}#{idx}",
-                    title="🚫",
-                    input_message_content=InputTextMessageContent("⛔ geçersiz hamle"),
-                )
-            )
-            continue
+        # Geçersiz kart olsa bile GERÇEK kart görselini gösteriyoruz (Article
+        # tipi Telegram'da düzgün önizleme veremediği için gri/bozuk ikon
+        # çıkıyordu). Sadece id'yi "illegal:" ile işaretliyoruz; seçilse bile
+        # chosen_result bunu tanıyıp hiçbir şey yapmadan çıkacak (pasif kart).
+        result_id_prefix = "illegal:" if is_illegal else ""
 
         if card_code in CARD_TO_STICKER_INDEX:
             try:
@@ -408,7 +401,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # title/description YOK -> Telegram bunu grid modunda (yan yana, yazısız) gösterir
             results.append(
                 InlineQueryResultCachedSticker(
-                    id=f"{card_code}#{idx}",
+                    id=f"{result_id_prefix}{card_code}#{idx}",
                     sticker_file_id=sticker_file_id,
                 )
             )
@@ -421,7 +414,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # title/description YOK -> grid görünüm, kart üzerinde yazı yok
         results.append(
             InlineQueryResultCachedPhoto(
-                id=f"{card_code}#{idx}",
+                id=f"{result_id_prefix}{card_code}#{idx}",
                 photo_file_id=file_id,
             )
         )
@@ -510,7 +503,7 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
         return
-    if result_id == "draw":
+   if result_id == "draw":
         res = draw_card(chat_id, user.id)
         if not res["ok"]:
             return
