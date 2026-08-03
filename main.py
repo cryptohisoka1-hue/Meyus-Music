@@ -201,8 +201,9 @@ async def _do_start_game(context, chat_id):
     # STORAGE_CHAT_ID ayarlı değilse (önerilmez) oyunun kendi grubuna düşer.
     cache_chat_id = STORAGE_CHAT_ID or chat_id
     asyncio.create_task(prewarm_all_cards(context.bot, cache_chat_id, ALL_CARD_CODES))
-    asyncio.create_task(get_local_icon_file_id(context.bot, PASS_ICON_CODE, pass_icon_bytes()))
-    asyncio.create_task(get_local_icon_file_id(context.bot, INFO_ICON_CODE, info_icon_bytes()))
+    asyncio.create_task(get_local_icon_file_id(context.bot, PASS_ICON_CODE, pass_icon_bytes))
+    asyncio.create_task(get_local_icon_file_id(context.bot, INFO_ICON_CODE, info_icon_bytes))
+    asyncio.create_task(get_local_icon_file_id(context.bot, LOCKED_ICON_CODE, locked_icon_bytes))
 
     file_id = await get_card_file_id(context.bot, t_card, cache_chat_id)
     await context.bot.send_photo(
@@ -614,7 +615,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ❓ Kart durumu bilgisi: sıra kimde olursa olsun her zaman gösterilir
     try:
         info_file_id = await get_local_icon_file_id(
-            context.bot, INFO_ICON_CODE, info_icon_bytes()
+            context.bot, INFO_ICON_CODE, info_icon_bytes
         )
         results.append(
             InlineQueryResultCachedPhoto(
@@ -651,7 +652,7 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if has_drawn:
             try:
                 pass_file_id = await get_local_icon_file_id(
-                    context.bot, PASS_ICON_CODE, pass_icon_bytes()
+                    context.bot, PASS_ICON_CODE, pass_icon_bytes
                 )
                 results.append(
                     InlineQueryResultCachedPhoto(
