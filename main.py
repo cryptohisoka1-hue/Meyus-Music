@@ -3,8 +3,10 @@ from game import *
 from cards_data import (
     card_display_label, DECK_BACK_CODE,
     COLOR_NAME_TR, COLOR_LABELS, ALL_CARD_CODES,
+    PASS_ICON_CODE, INFO_ICON_CODE,
 )
-from card_cache import get_card_file_id, prewarm_all_cards
+from card_cache import get_card_file_id, get_local_icon_file_id, prewarm_all_cards
+from icon_assets import pass_icon_bytes, info_icon_bytes
 from sticker_cache import get_sticker_set, get_card_sticker_file_id
 from card_sticker_map import CARD_TO_STICKER_INDEX
 from telegram import (
@@ -152,6 +154,8 @@ async def _do_start_game(context, chat_id):
     # STORAGE_CHAT_ID ayarlı değilse (önerilmez) oyunun kendi grubuna düşer.
     cache_chat_id = STORAGE_CHAT_ID or chat_id
     asyncio.create_task(prewarm_all_cards(context.bot, cache_chat_id, ALL_CARD_CODES))
+    asyncio.create_task(get_local_icon_file_id(context.bot, PASS_ICON_CODE, pass_icon_bytes()))
+    asyncio.create_task(get_local_icon_file_id(context.bot, INFO_ICON_CODE, info_icon_bytes()))
 
     file_id = await get_card_file_id(context.bot, t_card, cache_chat_id)
     await context.bot.send_photo(
@@ -377,6 +381,21 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = []
     for idx, card_code in enumerate(hand):
         sticker_file_id = None
+        is_illegal = my_turn and card_code not in legal
+
+        # Sıra bende ve bu kart oynanamıyorsa: kartı görsel olarak göstermek yerine
+        # yazısız, işlevsiz (pasif) bir sonuç koyuyoruz. Seçilse bile chosen_result
+        # bunu "illegal:" önekinden tanıyıp hiçbir şey yapmadan çıkacak.
+        if is_illegal:
+            results.append(
+                InlineQueryResultArticle(
+                    id=f"illegal:{card_code}#{idx}",
+                    title="🚫",
+                    input_message_content=InputTextMessageContent("⛔ geçersiz hamle"),
+                )
+            )
+            continue
+
         if card_code in CARD_TO_STICKER_INDEX:
             try:
                 sticker_file_id = await get_card_sticker_file_id(
@@ -385,13 +404,8 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception as e:
                 print(f"⚠️ Sticker alınamadı ({card_code}): {e}")
-        if my_turn and card_code in legal:
-            desc = "✅ Oynamak için dokun"
-        elif my_turn:
-            desc = "❌ Şu an geçersiz (renk/sayı uymuyor)"
-        else:
-            desc = "👀 Sadece görüntüleme — sıra sende değil"
         if sticker_file_id:
+            # title/description YOK -> Telegram bunu grid modunda (yan yana, yazısız) gösterir
             results.append(
                 InlineQueryResultCachedSticker(
                     id=f"{card_code}#{idx}",
@@ -404,23 +418,34 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"⚠️ Kart görseli yüklenemedi ({card_code}): {e}")
             continue
+        # title/description YOK -> grid görünüm, kart üzerinde yazı yok
         results.append(
             InlineQueryResultCachedPhoto(
                 id=f"{card_code}#{idx}",
                 photo_file_id=file_id,
-                title=f"🎴 {card_display_label(card_code)}",
-                description=desc,
             )
         )
     # ❓ Kart durumu bilgisi: sıra kimde olursa olsun her zaman gösterilir
-    results.append(
-        InlineQueryResultArticle(
-            id="info",
-            title="❓ Kart Durumu",
-            description="Kimde kaç kart olduğunu gruba bildir",
-            input_message_content=InputTextMessageContent("❓ kart durumu soruldu"),
+    try:
+        info_file_id = await get_local_icon_file_id(
+            context.bot, INFO_ICON_CODE, info_icon_bytes()
         )
-    )
+        results.append(
+            InlineQueryResultCachedPhoto(
+                id="info",
+                photo_file_id=info_file_id,
+                # title/description YOK -> grid'e girer, sadece ikon görünür
+            )
+        )
+    except Exception as e:
+        print(f"⚠️ Bilgi ikonu yüklenemedi: {e}")
+        results.append(
+            InlineQueryResultArticle(
+                id="info",
+                title="❓",
+                input_message_content=InputTextMessageContent("❓ kart durumu soruldu"),
+            )
+        )
     if my_turn:
         has_drawn = game.get("has_drawn", {}).get(user.id, False)
         try:
@@ -429,22 +454,33 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineQueryResultCachedPhoto(
                     id="draw",
                     photo_file_id=deck_file_id,
-                    title="🃏 Kart Çek",
-                    description="Elinde oynanabilir kart yoksa (veya istemiyorsan) çek",
+                    # title/description YOK -> grid'e girer, sadece kart arkası görünür
                 )
             )
         except Exception as e:
             print(f"⚠️ Deste görseli yüklenemedi: {e}")
         # Sadece kart çektikten sonra pas geçilebilir
         if has_drawn:
-            results.append(
-                InlineQueryResultArticle(
-                    id="pass",
-                    title="⏭ Pas Geç",
-                    description="Çektiğin kartı oynamak istemiyorsan sırayı geç",
-                    input_message_content=InputTextMessageContent("⏭ pas geçildi"),
+            try:
+                pass_file_id = await get_local_icon_file_id(
+                    context.bot, PASS_ICON_CODE, pass_icon_bytes()
                 )
-            )
+                results.append(
+                    InlineQueryResultCachedPhoto(
+                        id="pass",
+                        photo_file_id=pass_file_id,
+                        # title/description YOK -> grid'e girer, sadece ikon görünür
+                    )
+                )
+            except Exception as e:
+                print(f"⚠️ Pas ikonu yüklenemedi: {e}")
+                results.append(
+                    InlineQueryResultArticle(
+                        id="pass",
+                        title="⏭",
+                        input_message_content=InputTextMessageContent("⏭ pas geçildi"),
+                    )
+                )
     await inline_query.answer(results, cache_time=1, is_personal=True)
 
 
@@ -452,6 +488,13 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chosen = update.chosen_inline_result
     user = chosen.from_user
     result_id = chosen.result_id
+
+    # Pasif/geçersiz kart seçildiyse: "⛔ geçersiz hamle" mesajı zaten
+    # inline sonuç olarak gönderildi, oyuna hiçbir etkisi olmasın diye
+    # burada sessizce çıkıyoruz.
+    if result_id.startswith("illegal:"):
+        return
+
     chat_id, game = find_active_game_for_user(user.id)
     if not game:
         return
