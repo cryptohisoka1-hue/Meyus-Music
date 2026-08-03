@@ -95,10 +95,12 @@ async def _upload_bytes_and_cache(bot, card_code, image_data):
     get_card_file_id ve get_local_icon_file_id tarafından ortak kullanılan
     gönderim/retry mantığı.
     """
-    if not STORAGE_CHAT_ID:
+    target_chat_id = STORAGE_CHAT_ID or chat_id
+    if not target_chat_id:
         raise RuntimeError(
-            "STORAGE_CHAT_ID ayarlanmamış! Railway Variables kısmına "
-            "STORAGE_CHAT_ID eklenmeli (bkz. card_cache.py başındaki açıklama)."
+            "STORAGE_CHAT_ID ayarlanmamış ve fallback chat_id de yok. "
+            "Railway Variables kısmına STORAGE_CHAT_ID eklenmeli veya "
+            "get_card_file_id/get_local_icon_file_id çağrılırken geçerli bir chat_id sağlanmalı."
         )
 
     for attempt in range(_MAX_RETRIES):
@@ -106,7 +108,7 @@ async def _upload_bytes_and_cache(bot, card_code, image_data):
             async with _send_lock:
                 await _throttle()
                 msg = await bot.send_photo(
-                    chat_id=STORAGE_CHAT_ID,
+                    chat_id=target_chat_id,
                     photo=image_data,
                     read_timeout=30,
                     write_timeout=30,
