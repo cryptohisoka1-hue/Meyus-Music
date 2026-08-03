@@ -79,15 +79,39 @@ _CLASSIC_COLORBLIND_MAP = {
     "sari_dur":   53,
 }
 
-# --- Yeni temalar: eşlemeleri henüz çıkarılmadı ---
-# Her paketin gerçek sticker sırası görsel olarak incelenip doldurulmalı.
-# Doldurulana kadar boş kalabilir; kod otomatik olarak foto karta düşer.
-_CAT_ARYA_MAP = {}
-_PRINCESS_ARYA_MAP = {}
-_BJK_ARYA_MAP = {}
-_GS_ARYA_MAP = {}
-_ARYA_FB_THEME_PACK_MAP = {}
-_WOLF_ARYA_MAP = {}
+# --- Yeni temalar (cat_arya, princess_arya, bjk_arya, gs_arya, ---
+# --- arya_fb_theme_pack, wolf_arya): Görsel incelemeye göre hepsi ---
+# --- AYNI 108 sticker'lık düzeni paylaşıyor (deste ile birebir,     ---
+# --- her değerden 2 kopya):                                        ---
+#   0-1:   Joker (renk)        ×2
+#   2-3:   Joker (+4)          ×2
+#   4-29:  Kırmızı  0..9,+2,yön,dur   (her biri ×2)
+#   30-55: Yeşil    0..9,+2,yön,dur   (her biri ×2)
+#   56-81: Mavi     0..9,+2,yön,dur   (her biri ×2)
+#   82-107:Sarı     0..9,+2,yön,dur   (her biri ×2)
+# Dublikatlar görsel olarak aynı olduğu için her kart kodu için
+# sadece ilk kopyanın index'i kullanılıyor.
+
+_VALUE_ORDER = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "arti2", "yon", "dur"]
+_COLOR_BASE_OFFSET = {"kirmizi": 4, "yesil": 30, "mavi": 56, "sari": 82}
+
+
+def _build_standard_108_map():
+    m = {"wild_renk": 0, "wild_artidort": 2}
+    for color, base in _COLOR_BASE_OFFSET.items():
+        for i, val in enumerate(_VALUE_ORDER):
+            m[f"{color}_{val}"] = base + i * 2
+    return m
+
+
+_STANDARD_108_MAP = _build_standard_108_map()
+
+_CAT_ARYA_MAP = dict(_STANDARD_108_MAP)
+_PRINCESS_ARYA_MAP = dict(_STANDARD_108_MAP)
+_BJK_ARYA_MAP = dict(_STANDARD_108_MAP)
+_GS_ARYA_MAP = dict(_STANDARD_108_MAP)
+_ARYA_FB_THEME_PACK_MAP = dict(_STANDARD_108_MAP)
+_WOLF_ARYA_MAP = dict(_STANDARD_108_MAP)
 
 THEME_CARD_MAPS = {
     "classic_colorblind": _CLASSIC_COLORBLIND_MAP,
