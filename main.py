@@ -250,6 +250,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # /katil
 async def katil(update, context):
+    db.add_user(
+        update.effective_user.id,
+        update.effective_user.username,
+        update.effective_user.first_name
+    )
     result = join_game(
         update.effective_chat.id,
         update.effective_user.id,
@@ -259,12 +264,12 @@ async def katil(update, context):
         await update.message.reply_text("❌ Önce /oyun komutu ile bir oyun oluşturulmalı.")
         return
     if result == "ALREADY_JOINED":
-        await update.message.reply_text("ℹ️ Zaten oyuna katıldın.")
+        await update.message.reply_text("ℹ️Zaten oyuna katıldın.")
         return
     oyuncu = len(games[update.effective_chat.id]["players"])
     await update.message.reply_text(
         f"✅ {html_escape(update.effective_user.first_name)} oyuna katıldı!\n\n"
-        f"👥 Toplam oyuncu: {oyuncu}",
+        f"὆ Toplam oyuncu: {oyuncu}",
         parse_mode="HTML",
     )
 
