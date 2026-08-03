@@ -147,7 +147,7 @@ def play_card(chat_id, user_id, card_code):
     # Joker rengi
     if card_code.startswith("wild_"):
         game["needs_color"] = True
-        return {"ok": True, "needs_color": True}
+        return {"ok": True, "needs_color": True, "remaining": len(hand)}
 
     game["top_color"] = card_color(card_code)
 
@@ -181,10 +181,10 @@ def play_card(chat_id, user_id, card_code):
             if game["deck"]:
                 game["hands"][next_id].append(game["deck"].pop())
         _next_turn(chat_id)
-        return {"ok": True, "effect": effect}
+        return {"ok": True, "effect": effect, "remaining": len(hand)}
 
     _next_turn(chat_id)
-    return {"ok": True, "effect": effect}
+    return {"ok": True, "effect": effect, "remaining": len(hand)}
 
 
 def choose_color(chat_id, user_id, color):
@@ -232,3 +232,4 @@ def find_active_game_for_user(user_id):
     if chat_id and chat_id in games:
         return chat_id, games[chat_id]
     return None, None
+    
