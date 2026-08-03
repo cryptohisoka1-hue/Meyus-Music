@@ -1,155 +1,128 @@
-import sqlite3
 import os
-from datetime import datetime, timedelta, timezone
+import random
+from card_sticker_map import CARD_TO_STICKER_INDEX  # <-- EKLENDİ
 
-DB_PATH = os.getenv("DB_PATH", "uno_bot.db")
+# Kart görselleri için temel URL
+# GitHub Raw veya kendi CDN'inizi kullanın
+BASE_URL = os.getenv("CARDS_BASE_URL",
+    "https://raw.githubusercontent.com/cryptohisoka1-hue/Meyus-Music/main/assets/cards")
 
-# Türkiye 2016'dan beri kalıcı olarak UTC+3'te (yaz saati uygulaması yok)
-TR_TZ = timezone(timedelta(hours=3))
+# Eğer kartları yerel kullanacaksanız:
+# BASE_URL = "assets/cards"
 
+def card_image_url(card_code):
+    """Kart koduna göre görsel URL'si döndürür."""
+    return f"{BASE_URL}/{card_code}.png"
 
-def _week_start_str(dt=None):
-    """Türkiye saatine göre haftanın başlangıcını (Pazartesi 00:00) 'YYYY-MM-DD' olarak döndürür."""
-    dt = dt or datetime.now(TR_TZ)
-    monday = dt - timedelta(days=dt.weekday())
-    return monday.strftime("%Y-%m-%d")
+def card_display_label(card_code):
+    """Kartın görünen adını döndürür."""
+    mapping = {
+        "kirmizi_0": "🔴 0", "kirmizi_1": "🔴 1", "kirmizi_2": "🔴 2",
+        "kirmizi_3": "🔴 3", "kirmizi_4": "🔴 4", "kirmizi_5": "🔴 5",
+        "kirmizi_6": "🔴 6", "kirmizi_7": "🔴 7", "kirmizi_8": "🔴 8",
+        "kirmizi_9": "🔴 9", "kirmizi_arti2": "🔴 +2",
+        "kirmizi_dur": "🔴 DUR", "kirmizi_yon": "🔴 YÖN",
 
+        "yesil_0": "🟢 0", "yesil_1": "🟢 1", "yesil_2": "🟢 2",
+        "yesil_3": "🟢 3", "yesil_4": "🟢 4", "yesil_5": "🟢 5",
+        "yesil_6": "🟢 6", "yesil_7": "🟢 7", "yesil_8": "🟢 8",
+        "yesil_9": "🟢 9", "yesil_arti2": "🟢 +2",
+        "yesil_dur": "🟢 DUR", "yesil_yon": "🟢 YÖN",
 
-class Database:
-    def __init__(self, db_path=DB_PATH):
-        self.db_path = db_path
-        self._init_db()
+        "mavi_0": "🔵 0", "mavi_1": "🔵 1", "mavi_2": "🔵 2",
+        "mavi_3": "🔵 3", "mavi_4": "🔵 4", "mavi_5": "🔵 5",
+        "mavi_6": "🔵 6", "mavi_7": "🔵 7", "mavi_8": "🔵 8",
+        "mavi_9": "🔵 9", "mavi_arti2": "🔵 +2",
+        "mavi_dur": "🔵 DUR", "mavi_yon": "🔵 YÖN",
 
-    def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id INTEGER PRIMARY KEY,
-                    username TEXT,
-                    first_name TEXT,
-                    coins INTEGER DEFAULT 0,
-                    wins INTEGER DEFAULT 0,
-                    games INTEGER DEFAULT 0,
-                    level INTEGER DEFAULT 1,
-                    xp INTEGER DEFAULT 0,
-                    theme TEXT DEFAULT 'classic_colorblind'
-                )
-            """)
-            # Eski veritabanlarında theme sütunu olmayabilir, varsa hata vermeden geç
-            try:
-                conn.execute("ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'classic_colorblind'")
-                conn.commit()
-            except sqlite3.OperationalError:
-                pass
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS weekly_stats (
-                    user_id INTEGER,
-                    week_start TEXT,
-                    first_name TEXT,
-                    wins INTEGER DEFAULT 0,
-                    games INTEGER DEFAULT 0,
-                    PRIMARY KEY (user_id, week_start)
-                )
-            """)
-            conn.commit()
+        "sari_0": "🟡 0", "sari_1": "🟡 1", "sari_2": "🟡 2",
+        "sari_3": "🟡 3", "sari_4": "🟡 4", "sari_5": "🟡 5",
+        "sari_6": "🟡 6", "sari_7": "🟡 7", "sari_8": "🟡 8",
+        "sari_9": "🟡 9", "sari_arti2": "🟡 +2",
+        "sari_dur": "🟡 DUR", "sari_yon": "🟡 YÖN",
 
-    def get_user(self, user_id):
-        with sqlite3.connect(self.db_path) as conn:
-            cur = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-            return cur.fetchone()
-
-    def add_user(self, user_id, username, first_name):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
-                (user_id, username, first_name)
-            )
-            conn.commit()
-
-    def _ensure_weekly_row(self, conn, user_id, first_name):
-        week = _week_start_str()
-        conn.execute(
-            "INSERT OR IGNORE INTO weekly_stats (user_id, week_start, first_name) VALUES (?, ?, ?)",
-            (user_id, week, first_name)
-        )
-        return week
-
-    def add_win(self, user_id, first_name=None):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "UPDATE users SET wins = wins + 1 WHERE user_id = ?",
-                (user_id,)
-            )
-            week = self._ensure_weekly_row(conn, user_id, first_name or "?")
-            conn.execute(
-                "UPDATE weekly_stats SET wins = wins + 1, first_name = COALESCE(?, first_name) "
-                "WHERE user_id = ? AND week_start = ?",
-                (first_name, user_id, week)
-            )
-            conn.commit()
-
-    def add_game(self, user_id, first_name=None):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "UPDATE users SET games = games + 1 WHERE user_id = ?",
-                (user_id,)
-            )
-            week = self._ensure_weekly_row(conn, user_id, first_name or "?")
-            conn.execute(
-                "UPDATE weekly_stats SET games = games + 1, first_name = COALESCE(?, first_name) "
-                "WHERE user_id = ? AND week_start = ?",
-                (first_name, user_id, week)
-            )
-            conn.commit()
-
-    def add_coin(self, user_id, amount):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "UPDATE users SET coins = coins + ? WHERE user_id = ?",
-                (amount, user_id)
-            )
-            conn.commit()
-
-    def add_xp(self, user_id, amount):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "UPDATE users SET xp = xp + ? WHERE user_id = ?",
-                (amount, user_id)
-            )
-            conn.execute(
-                "UPDATE users SET level = (xp / 100) + 1 WHERE user_id = ?",
-                (user_id,)
-            )
-            conn.commit()
-
-    def get_theme(self, user_id):
-        """Kullanıcının seçtiği temayı döndürür (kayıtlı değilse varsayılan)."""
-        with sqlite3.connect(self.db_path) as conn:
-            cur = conn.execute("SELECT theme FROM users WHERE user_id = ?", (user_id,))
-            row = cur.fetchone()
-            if row and row[0]:
-                return row[0]
-            return "classic_colorblind"
-
-    def set_theme(self, user_id, theme_id):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "UPDATE users SET theme = ? WHERE user_id = ?",
-                (theme_id, user_id)
-            )
-            conn.commit()
-
-    def get_weekly_leaderboard(self, limit=10):
-        """Türkiye saatine göre bu haftanın en iyi oyuncularını döndürür."""
-        week = _week_start_str()
-        with sqlite3.connect(self.db_path) as conn:
-            cur = conn.execute(
-                "SELECT user_id, first_name, wins, games FROM weekly_stats "
-                "WHERE week_start = ? ORDER BY wins DESC, games DESC LIMIT ?",
-                (week, limit)
-            )
-            return cur.fetchall()
+        "wild_renk": "🌈 Renk Değiştir",
+        "wild_artidort": "🌈 +4",
+        "deste": "🎴 Deste",
+    }
+    return mapping.get(card_code, card_code)
 
 
-# Global instance
-db = Database()
+# Renk bilgileri
+COLOR_NAME_TR = {
+    "kirmizi": "Kırmızı",
+    "yesil": "Yeşil",
+    "mavi": "Mavi",
+    "sari": "Sarı",
+    "wild": "Joker",
+}
+
+COLOR_LABELS = {
+    "kirmizi": "🔴",
+    "yesil": "🟢",
+    "mavi": "🔵",
+    "sari": "🟡",
+}
+
+# Deste arka yüzü
+DECK_BACK_CODE = "deste"
+
+# Tüm kart kodları
+ALL_CARD_CODES = list(CARD_TO_STICKER_INDEX.keys()) + [DECK_BACK_CODE]
+
+# Sabit ikon kodları (bot.py'nin pas geç / bilgi / kilitli kart ikonlarını
+# önbelleğe alırken kullandığı benzersiz anahtarlar; get_local_icon_file_id
+# bu kodları Telegram'a yüklenen görselin file_id'sini önbellekte
+# eşleştirmek için kullanıyor)
+PASS_ICON_CODE = "pass_icon"
+INFO_ICON_CODE = "info_icon"
+LOCKED_ICON_CODE = "locked_card_icon"
+
+
+def build_deck():
+    """Standart UNO destesi oluşturur."""
+    deck = []
+    colors = ["kirmizi", "yesil", "mavi", "sari"]
+
+    for color in colors:
+        # 0 bir kere
+        deck.append(f"{color}_0")
+        # 1-9 ikişer kere
+        for num in range(1, 10):
+            deck.extend([f"{color}_{num}", f"{color}_{num}"])
+        # Özel kartlar ikişer kere
+        deck.extend([f"{color}_arti2", f"{color}_arti2"])
+        deck.extend([f"{color}_dur", f"{color}_dur"])
+        deck.extend([f"{color}_yon", f"{color}_yon"])
+
+    # Jokerler 4'er kere
+    deck.extend(["wild_renk"] * 4)
+    deck.extend(["wild_artidort"] * 4)
+
+    random.shuffle(deck)
+    return deck
+
+
+def card_color(card_code):
+    """Kartın rengini döndürür."""
+    if card_code.startswith("wild_"):
+        return "wild"
+    return card_code.split("_")[0]
+
+
+def card_value(card_code):
+    """Kartın değerini döndürür."""
+    return card_code.split("_", 1)[1]
+
+
+def can_play(card_code, top_card, top_color):
+    """Kart oynanabilir mi kontrol eder."""
+    if card_code.startswith("wild_"):
+        return True
+
+    card_c = card_color(card_code)
+    card_v = card_value(card_code)
+    top_c = card_color(top_card) if not top_card.startswith("wild_") else top_color
+    top_v = card_value(top_card)
+
+    return card_c == top_c or card_v == top_v
