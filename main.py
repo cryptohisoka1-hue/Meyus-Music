@@ -92,11 +92,12 @@ async def announce_effect(context, chat_id, actor_mention, effect, next_mention=
 async def finish_game(context, chat_id, winner_uid):
     game = games[chat_id]
     winner_mention = mention_html(winner_uid, player_name(game, winner_uid))
-    db.add_win(winner_uid)
+    db.add_win(winner_uid, player_name(game, winner_uid))          # ← isim eklendi
     for p in game["players"]:
-        db.add_game(p["id"])
+        db.add_game(p["id"], p["name"])                            # ← isim eklendi
     db.add_coin(winner_uid, 50)
     db.add_xp(winner_uid, 30)
+    ...
     await context.bot.send_message(
         chat_id,
         f"🏆 {winner_mention} oyunu kazandı! 🎉\n\n"
