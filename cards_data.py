@@ -44,6 +44,8 @@ def card_display_label(card_code):
         "wild_renk": "🌈 Renk Değiştir",
         "wild_artidort": "🌈 +4",
         "deste": "🎴 Deste",
+        "pas_ikon": "⏭ Pas Geç",
+        "bilgi_ikon": "❓ Kart Durumu",
     }
     return mapping.get(card_code, card_code)
 
@@ -67,7 +69,12 @@ COLOR_LABELS = {
 # Deste arka yüzü
 DECK_BACK_CODE = "deste"
 
-# Tüm kart kodları
+# Pas geç ve kart durumu ikon kodları (kod içine gömülü base64 görseller,
+# icon_assets.py + card_cache.get_local_icon_file_id ile gönderilir)
+PASS_ICON_CODE = "pas_ikon"
+INFO_ICON_CODE = "bilgi_ikon"
+
+# Tüm kart kodları (yerel ikonlar burada YOK, çünkü GitHub'dan indirilmiyorlar)
 ALL_CARD_CODES = list(CARD_TO_STICKER_INDEX.keys()) + [DECK_BACK_CODE]
 
 
@@ -118,3 +125,4 @@ def can_play(card_code, top_card, top_color):
     top_v = card_value(top_card)
 
     return card_c == top_c or card_v == top_v
+    
