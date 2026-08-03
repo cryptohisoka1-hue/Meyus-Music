@@ -63,9 +63,11 @@ async def announce_turn(context: ContextTypes.DEFAULT_TYPE, chat_id):
     uid = current_player(chat_id)
     name = player_name(game, uid)
     color_tr = COLOR_NAME_TR.get(game["top_color"], game["top_color"])
+    top_label = card_display_label(top_card(chat_id))
     await context.bot.send_message(
         chat_id,
         f"🎯 Sıra sende {mention_html(uid, name)}!\n"
+        f"🎴 Son atılan kart: <b>{top_label}</b>\n"
         f"🎨 Geçerli renk: <b>{color_tr}</b>\n\n"
         f"Aşağıdaki butona dokun, kartların otomatik açılsın 🎴",
         parse_mode="HTML",
@@ -497,7 +499,13 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if res.get("win"):
         await finish_game(context, chat_id, user.id)
         return
-    if res.get("needs_color"):
+    if res.get("remaining") == 1:
+        await context.bot.send_message(
+            chat_id,
+            f"🎉 {actor_mention} <b>UNO!</b> Elinde sadece 1 kart kaldı!",
+            parse_mode="HTML",
+        )
+      if res.get("needs_color"):
         keyboard = [[
             InlineKeyboardButton(
                 f"{COLOR_LABELS[c]} {COLOR_NAME_TR[c]}",
@@ -635,4 +643,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()  
