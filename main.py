@@ -373,9 +373,6 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cache_chat_id = STORAGE_CHAT_ID or chat_id
     results = []
     for idx, card_code in enumerate(hand):
-        if my_turn and card_code not in legal:
-            # Sıra sende ve bu kart oynanamıyorsa listede hiç gösterme
-            continue
         sticker_file_id = None
         if card_code in CARD_TO_STICKER_INDEX:
             try:
@@ -385,8 +382,10 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception as e:
                 print(f"⚠️ Sticker alınamadı ({card_code}): {e}")
-        if my_turn:
+        if my_turn and card_code in legal:
             desc = "✅ Oynamak için dokun"
+        elif my_turn:
+            desc = "❌ Şu an geçersiz (renk/sayı uymuyor)"
         else:
             desc = "👀 Sadece görüntüleme — sıra sende değil"
         if sticker_file_id:
@@ -410,6 +409,15 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 description=desc,
             )
         )
+    # ❓ Kart durumu bilgisi: sıra kimde olursa olsun her zaman gösterilir
+    results.append(
+        InlineQueryResultArticle(
+            id="info",
+            title="❓ Kart Durumu",
+            description="Kimde kaç kart olduğunu gruba bildir",
+            input_message_content=InputTextMessageContent("❓ kart durumu soruldu"),
+        )
+    )
     if my_turn:
         has_drawn = game.get("has_drawn", {}).get(user.id, False)
         try:
@@ -445,6 +453,17 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not game:
         return
     actor_mention = mention_html(user.id, player_name(game, user.id))
+    if result_id == "info":
+        lines = ["📊 <b>Kart Durumu</b>\n"]
+        for p in game["players"]:
+            count = len(game["hands"].get(p["id"], []))
+            lines.append(f"• {html_escape(p['name'])}: {count} kart")
+        await context.bot.send_message(
+            chat_id,
+            "\n".join(lines),
+            parse_mode="HTML",
+        )
+        return
     if result_id == "draw":
         res = draw_card(chat_id, user.id)
         if not res["ok"]:
@@ -484,18 +503,7 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     card_code = result_id.split("#", 1)[0]
     res = play_card(chat_id, user.id, card_code)
     if not res["ok"]:
-        reasons = {
-            "SIRA_DEGIL": "sıra sende değildi",
-            "KART_YOK": "bu kart elinde yoktu",
-            "GECERSIZ_HAMLE": "bu hamle geçerli değildi (renk/sayı uymuyor)",
-            "OYUN_BITTI": "oyun zaten bitmiş",
-        }
-        await context.bot.send_message(
-            chat_id,
-            f"⚠️ {actor_mention} geçersiz bir kart gönderdi "
-            f"({reasons.get(res['reason'], res['reason'])}), hamle işlenmedi.",
-            parse_mode="HTML",
-        )
+        # Geçersiz hamle: gruba herhangi bir bildirim gönderilmez, kart sessizce işlevsiz kalır.
         return
     if res.get("win"):
         await finish_game(context, chat_id, user.id)
