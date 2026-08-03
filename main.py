@@ -812,6 +812,15 @@ async def button(
 
         return
 
+    if query.data.startswith("theme:"):
+
+    await theme_callback(
+        update,
+        context
+    )
+
+    return
+
     # -----------------------------------------------------
     # TEMA
     # -----------------------------------------------------
