@@ -118,21 +118,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
+    db.add_user(user.id, user.username, user.first_name)   # ← eklendi
     if not create_game(chat.id, user.id):
         await update.message.reply_text("❌ Bu grupta zaten açık bir oyun var.")
         return
     join_game(chat.id, user.id, user.first_name)
-    keyboard = [
-        [InlineKeyboardButton("➕ Katıl", callback_data="join")],
-        [InlineKeyboardButton("▶️ Başlat", callback_data="start_game")]
-    ]
-    msg = await update.message.reply_text(
-        f"🎮 <b>Meyus UNO Lobisi</b>\n\n"
-        f"👥 Oyuncular (1)\n"
-        f"• {html_escape(user.first_name)}",
-        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML"
-    )
-    lobby_messages[chat.id] = msg
+    ...
 
 
 async def _do_start_game(context, chat_id):
