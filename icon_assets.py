@@ -202,4 +202,6 @@ def pass_icon_bytes():
     return base64.b64decode(PASS_ICON_B64)
 
 
-def info_icon_
+def info_icon_bytes():
+    """Kart durumu ikonunun PNG bayt verisini döndürür."""
+    return base64.b64decode(INFO_ICON_B64)
