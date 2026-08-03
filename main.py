@@ -645,6 +645,22 @@ async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# /siralama - haftalık ilk 10
+async def siralama(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    top = db.get_weekly_leaderboard(10)
+    if not top:
+        await update.message.reply_text("Ἲ Bu hafta henüz kimse oyun bitirmedi.")
+        return
+
+    madalya = ["Ἱ", "Ἲ", "Ἳ"]
+    lines = ["Ἲ <b>Haftalık Sıralama</b> (ilk 10)\n"]
+    for i, (uid, name, wins, games) in enumerate(top):
+        rank = madalya[i] if i < 3 else f"{i+1}."
+        lines.append(f"{rank} {html_escape(name)} — Ἴ {wins} galibiyet ({games} oyun)")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
 async def yardim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         """📖 Yardım /start - Botu başlatır /oyun - Yeni oyun oluşturur /katil - Oyuna katılır /baslat - Oyunu başlatır /bitir - Oyunu/lobiyi sonlandırır (oyunu açan veya yöneticiler) /profil - Profilini gösterir /cek - Sıra sendeyken kart çeker /pas - Kart çektikten sonra sırayı geçer 🎴 Her an "Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin. Sıra sende olduğunda aynı buton oynanabilir kartları, kart çekme ve pas geçme seçeneklerini listeler, seçtiğin otomatik uygulanır."""
@@ -700,6 +716,7 @@ def main():
     app.add_handler(InlineQueryHandler(inline_hand))
     app.add_handler(ChosenInlineResultHandler(chosen_result))
     app.add_error_handler(error_handler)
+    app.add_handler(CommandHandler("siralama", siralama))
     print("✅ Meyus UNO başlatıldı!")
     app.run_polling()
 
