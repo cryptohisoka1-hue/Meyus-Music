@@ -110,9 +110,9 @@ async def finish_game(context, chat_id, winner_uid):
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    text = f"""🎮 <b>MEYUS UNO</b> Merhaba <b>{html_escape(user.first_name)}</b>! 🎉 Meyus UNO'ya hoş geldin. Bu bot ile arkadaşlarınla tamamen Telegram üzerinden UNO oynayabilirsin. 📜 Komutlar: /start - Botu başlat /yardim - Yardım /oyun - Yeni oyun oluştur /katil - Oyuna katıl /baslat - Oyunu başlat /bitir - Oyunu/lobiyi sonlandır /profil - Profilin /cek - Kart çek (sıra sendeyken) /pas - Pas geç (kart çektikten sonra) 🎴 Her an "Kartlarımı Gör / Oyna" butonuna dokunarak elini görebilirsin (sıra sende değilse sadece görüntülemek için). Sıra sende olduğunda aynı buton oynanabilir kartlarını, kart çekme ve pas geçme seçeneklerini listeler; seçtiğin otomatik uygulanır. İyi eğlenceler ❤️"""
+    db.add_user(user.id, user.username, user.first_name)   # ← eklendi
+    text = f""" ... """
     await update.message.reply_text(text, parse_mode="HTML")
-
 
 # /oyun
 async def oyun(update: Update, context: ContextTypes.DEFAULT_TYPE):
