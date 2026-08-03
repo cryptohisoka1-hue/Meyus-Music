@@ -50,7 +50,7 @@ def start_game(chat_id):
     game["deck"] = build_deck()
     game["discard"] = []
     game["hands"] = {}
-    game["turn"] = 0
+    game["turn"] = random.randrange(len(game["players"]))
     game["direction"] = 1
     game["winner"] = None
     game["has_drawn"] = {}
