@@ -373,6 +373,9 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cache_chat_id = STORAGE_CHAT_ID or chat_id
     results = []
     for idx, card_code in enumerate(hand):
+        if my_turn and card_code not in legal:
+            # Sıra sende ve bu kart oynanamıyorsa listede hiç gösterme
+            continue
         sticker_file_id = None
         if card_code in CARD_TO_STICKER_INDEX:
             try:
@@ -382,10 +385,8 @@ async def inline_hand(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception as e:
                 print(f"⚠️ Sticker alınamadı ({card_code}): {e}")
-        if my_turn and card_code in legal:
+        if my_turn:
             desc = "✅ Oynamak için dokun"
-        elif my_turn:
-            desc = "❌ Şu an geçersiz (renk/sayı uymuyor)"
         else:
             desc = "👀 Sadece görüntüleme — sıra sende değil"
         if sticker_file_id:
