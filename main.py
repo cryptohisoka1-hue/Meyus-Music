@@ -494,10 +494,10 @@ async def chosen_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
         return
-    if res["win"]:
+    if res.get("win"):
         await finish_game(context, chat_id, user.id)
         return
-    if res["needs_color"]:
+    if res.get("needs_color"):
         keyboard = [[
             InlineKeyboardButton(
                 f"{COLOR_LABELS[c]} {COLOR_NAME_TR[c]}",
