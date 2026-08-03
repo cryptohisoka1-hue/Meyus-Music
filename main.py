@@ -72,7 +72,7 @@ from database import db
 
 
 # =========================================================
-# TEMA SİSTEMİ
+# KART TEMALARI
 # =========================================================
 
 CARD_THEMES = {
@@ -103,9 +103,33 @@ CARD_THEMES = {
 }
 
 
-# Silik kartların file_id önbelleği
-DIMMED_FILE_IDS = {}
+def get_user_theme(user_id):
+    try:
+        theme = db.get_theme(user_id)
 
+        if theme in CARD_THEMES:
+            return theme
+
+    except Exception as e:
+        print(f"⚠️ Tema okunamadı: {e}")
+
+    return "meyus"
+
+
+def theme_keyboard():
+
+    rows = []
+
+    for theme_id, theme in CARD_THEMES.items():
+
+        rows.append([
+            InlineKeyboardButton(
+                theme["name"],
+                callback_data=f"theme:{theme_id}"
+            )
+        ])
+
+    return InlineKeyboardMarkup(rows)
 
 # =========================================================
 # YARDIMCI FONKSİYONLAR
