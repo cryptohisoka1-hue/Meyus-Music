@@ -4,6 +4,7 @@ Meyus UNO - Icon Assets
 Telegram inline kart menüsünde kullanılan:
 - Pas geç ikonunu
 - Bilgi ikonunu
+- Kilitli/soluk kart ikonunu
 
 harici PNG dosyası gerektirmeden Python üzerinden üretir.
 """
@@ -215,12 +216,115 @@ def _create_info_icon() -> bytes:
 
 
 # ============================================================
+# KİLİTLİ / SOLUK KART İKONU
+# ============================================================
+
+def _create_locked_icon() -> bytes:
+    """
+    Kilitli (soluk) kart ikonunu oluşturur.
+
+    Şeffaf arka plan üzerinde, daha soluk tonlarda,
+    içinde bir asma kilit (kilit gövdesi + kavis/kulp)
+    bulunan dairesel ikon.
+    """
+
+    image = Image.new(
+        "RGBA",
+        (ICON_SIZE, ICON_SIZE),
+        (0, 0, 0, 0),
+    )
+
+    draw = ImageDraw.Draw(image)
+
+    margin = 20
+
+    # Dış yuvarlak (soluk/gri ton, kilitli olduğunu belli etmek için)
+    draw.ellipse(
+        (
+            margin,
+            margin,
+            ICON_SIZE - margin,
+            ICON_SIZE - margin,
+        ),
+        fill=(60, 60, 60, 255),
+        outline=(160, 160, 160, 255),
+        width=12,
+    )
+
+    # Kilit kulpu (kavis) - üstte yarım daire şeklinde bir yay
+    shackle_width = 22
+
+    draw.arc(
+        (
+            ICON_SIZE // 2 - 90,
+            150,
+            ICON_SIZE // 2 + 90,
+            330,
+        ),
+        start=180,
+        end=360,
+        fill=(210, 210, 210, 255),
+        width=shackle_width,
+    )
+
+    # Kilit gövdesi
+    body_left = ICON_SIZE // 2 - 115
+    body_top = 260
+    body_right = ICON_SIZE // 2 + 115
+    body_bottom = 420
+
+    draw.rounded_rectangle(
+        (
+            body_left,
+            body_top,
+            body_right,
+            body_bottom,
+        ),
+        radius=30,
+        fill=(210, 210, 210, 255),
+    )
+
+    # Kilit üzerindeki anahtar deliği
+    keyhole_center_x = ICON_SIZE // 2
+    keyhole_center_y = 320
+    keyhole_radius = 22
+
+    draw.ellipse(
+        (
+            keyhole_center_x - keyhole_radius,
+            keyhole_center_y - keyhole_radius,
+            keyhole_center_x + keyhole_radius,
+            keyhole_center_y + keyhole_radius,
+        ),
+        fill=(60, 60, 60, 255),
+    )
+
+    draw.polygon(
+        (
+            keyhole_center_x - 14,
+            keyhole_center_y + 10,
+            keyhole_center_x + 14,
+            keyhole_center_y + 10,
+            keyhole_center_x + 8,
+            keyhole_center_y + 55,
+            keyhole_center_x - 8,
+            keyhole_center_y + 55,
+        ),
+        fill=(60, 60, 60, 255),
+    )
+
+    return _png_bytes(image)
+
+
+# ============================================================
 # DIŞARIDAN KULLANILACAK BYTE DEĞİŞKENLERİ
 # ============================================================
 
 pass_icon_bytes = _create_pass_icon()
 
 info_icon_bytes = _create_info_icon()
+
+locked_icon_bytes = _create_locked_icon()
 
 
 # ============================================================
@@ -235,3 +339,9 @@ def get_pass_icon_bytes() -> bytes:
 def get_info_icon_bytes() -> bytes:
     """Bilgi ikonunun PNG byte verisini döndürür."""
     return info_icon_bytes
+
+
+def get_locked_icon_bytes() -> bytes:
+    """Kilitli ikonun PNG byte verisini döndürür."""
+    return locked_icon_bytes
+    
