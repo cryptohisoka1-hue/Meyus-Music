@@ -27,6 +27,15 @@ from telegram.ext import (
     ChosenInlineResultHandler,
     ContextTypes,
 )
+from telegram import Update
+from telegram.ext import ContextTypes, MessageHandler, filters
+
+async def get_sticker_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.sticker:
+        await update.message.reply_text(
+            f"file_id:\n`{update.message.sticker.file_id}`",
+            parse_mode="Markdown"
+        )
 from telegram.error import ChatMigrated
 from config import BOT_TOKEN, STORAGE_CHAT_ID, STICKER_SET_NAME
 from database import db
