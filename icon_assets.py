@@ -1,58 +1,237 @@
 """
-icon_assets.py dosyanızdaki, base64 satırlarının başına yanlışlıkla
-karışmış "79\t", "156\t" gibi satır numarası öneklerini temizler.
+Meyus UNO - Icon Assets
 
-Hiçbir base64 karakterine dokunmaz; sadece satır başındaki
-   <rakamlar><TAB veya boşluklar>
-kalıbını, kendisinden sonra bir tırnak (") geliyorsa siler.
+Telegram inline kart menüsünde kullanılan:
+- Pas geç ikonunu
+- Bilgi ikonunu
 
-Kullanım:
-    python fix_icon_assets.py /path/to/icon_assets.py
-
-Çıktı olarak aynı klasöre "icon_assets.fixed.py" yazar.
-Orijinal dosyanıza dokunmaz.
+harici PNG dosyası gerektirmeden Python üzerinden üretir.
 """
 
-import re
-import sys
-import ast
+from io import BytesIO
+
+from PIL import Image, ImageDraw, ImageFont
 
 
-def clean_line_number_prefixes(text: str) -> str:
-    # Satır başındaki "  79\t"  veya  "156\t" gibi
-    # (boşluk*)(rakamlar)(tab/boşluklar)(") kalıbını temizler.
-    pattern = re.compile(r'^[ \t]*\d+\t(?=\s*")', re.MULTILINE)
-    return pattern.sub("", text)
+# ============================================================
+# AYARLAR
+# ============================================================
+
+ICON_SIZE = 512
 
 
-def main():
-    if len(sys.argv) != 2:
-        print("Kullanım: python fix_icon_assets.py /path/to/icon_assets.py")
-        sys.exit(1)
+def _get_font(size: int):
+    """
+    Sistemde uygun bir font bulmaya çalışır.
+    Font bulunamazsa PIL varsayılan fontunu kullanır.
+    """
 
-    src_path = sys.argv[1]
-    with open(src_path, "r", encoding="utf-8") as f:
-        original = f.read()
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+        "/system/fonts/Roboto-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
 
-    cleaned = clean_line_number_prefixes(original)
+    for path in font_paths:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            pass
 
-    # Doğrulama: dosya artık geçerli Python olarak parse ediliyor mu?
-    try:
-        ast.parse(cleaned)
-        print("✅ Temizlenen dosya geçerli Python sözdizimine sahip.")
-    except SyntaxError as e:
-        print(f"⚠️  Temizlikten sonra hâlâ SyntaxError var: {e}")
-        print("Dosyayı yine de yazıyorum, ama satırı elle kontrol etmeniz gerekebilir.")
-
-    out_path = src_path.rsplit(".", 1)[0] + ".fixed.py"
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(cleaned)
-
-    n_removed = len(re.findall(r'^[ \t]*\d+\t(?=\s*")', original, re.MULTILINE))
-    print(f"Temizlenen satır sayısı: {n_removed}")
-    print(f"Düzeltilmiş dosya yazıldı: {out_path}")
+    return ImageFont.load_default()
 
 
-if __name__ == "__main__":
-    main()
-    
+def _png_bytes(image: Image.Image) -> bytes:
+    """
+    PIL Image nesnesini PNG byte verisine çevirir.
+    """
+
+    output = BytesIO()
+
+    image.save(
+        output,
+        format="PNG",
+        optimize=True,
+    )
+
+    return output.getvalue()
+
+
+# ============================================================
+# PAS GEÇ İKONU
+# ============================================================
+
+def _create_pass_icon() -> bytes:
+    """
+    Pas geç ikonunu oluşturur.
+
+    Şeffaf arka plan üzerinde:
+    - Yuvarlak ikon
+    - İleri yönlü ok
+    - PAS yazısı
+    """
+
+    image = Image.new(
+        "RGBA",
+        (ICON_SIZE, ICON_SIZE),
+        (0, 0, 0, 0),
+    )
+
+    draw = ImageDraw.Draw(image)
+
+    # Dış yuvarlak
+    margin = 20
+
+    draw.ellipse(
+        (
+            margin,
+            margin,
+            ICON_SIZE - margin,
+            ICON_SIZE - margin,
+        ),
+        fill=(35, 35, 35, 255),
+        outline=(255, 255, 255, 255),
+        width=12,
+    )
+
+    # Ok
+    center_y = 205
+
+    draw.line(
+        (
+            110,
+            center_y,
+            350,
+            center_y,
+        ),
+        fill=(255, 255, 255, 255),
+        width=30,
+    )
+
+    draw.polygon(
+        (
+            350,
+            center_y - 65,
+            425,
+            center_y,
+            350,
+            center_y + 65,
+        ),
+        fill=(255, 255, 255, 255),
+    )
+
+    # PAS yazısı
+    font = _get_font(105)
+
+    text = "PAS"
+
+    bbox = draw.textbbox(
+        (0, 0),
+        text,
+        font=font,
+    )
+
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+
+    x = (ICON_SIZE - text_width) // 2
+    y = 285
+
+    draw.text(
+        (
+            x,
+            y,
+        ),
+        text,
+        font=font,
+        fill=(255, 255, 255, 255),
+    )
+
+    return _png_bytes(image)
+
+
+# ============================================================
+# BİLGİ İKONU
+# ============================================================
+
+def _create_info_icon() -> bytes:
+    """
+    Bilgi ikonunu oluşturur.
+
+    Şeffaf arka plan üzerinde beyaz 'i'
+    bulunan dairesel ikon.
+    """
+
+    image = Image.new(
+        "RGBA",
+        (ICON_SIZE, ICON_SIZE),
+        (0, 0, 0, 0),
+    )
+
+    draw = ImageDraw.Draw(image)
+
+    margin = 20
+
+    # Dış yuvarlak
+    draw.ellipse(
+        (
+            margin,
+            margin,
+            ICON_SIZE - margin,
+            ICON_SIZE - margin,
+        ),
+        fill=(35, 35, 35, 255),
+        outline=(255, 255, 255, 255),
+        width=12,
+    )
+
+    # "i" noktası
+    dot_radius = 30
+
+    draw.ellipse(
+        (
+            ICON_SIZE // 2 - dot_radius,
+            100,
+            ICON_SIZE // 2 + dot_radius,
+            100 + dot_radius * 2,
+        ),
+        fill=(255, 255, 255, 255),
+    )
+
+    # "i" gövdesi
+    draw.rounded_rectangle(
+        (
+            ICON_SIZE // 2 - 28,
+            180,
+            ICON_SIZE // 2 + 28,
+            390,
+        ),
+        radius=25,
+        fill=(255, 255, 255, 255),
+    )
+
+    return _png_bytes(image)
+
+
+# ============================================================
+# DIŞARIDAN KULLANILACAK BYTE DEĞİŞKENLERİ
+# ============================================================
+
+pass_icon_bytes = _create_pass_icon()
+
+info_icon_bytes = _create_info_icon()
+
+
+# ============================================================
+# OPSİYONEL YARDIMCI FONKSİYONLAR
+# ============================================================
+
+def get_pass_icon_bytes() -> bytes:
+    """Pas ikonunun PNG byte verisini döndürür."""
+    return pass_icon_bytes
+
+
+def get_info_icon_bytes() -> bytes:
+    """Bilgi ikonunun PNG byte verisini döndürür."""
+    return info_icon_bytes
