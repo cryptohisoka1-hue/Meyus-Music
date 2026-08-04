@@ -16,7 +16,13 @@ from callbacks import (
     cmd_siralama,
     cmd_profil,
     on_callback,
+    load_all_themes,
 )
+
+
+# =========================================================
+# LOGGING
+# =========================================================
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -26,73 +32,186 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# =========================================================
+# BAŞLANGIÇ
+# =========================================================
+
 async def post_init(application):
+    """
+    Bot başlatılırken Telegram bağlantısını kontrol eder.
+
+    Tema yükleme işlemi arka planda yapılır.
+    Böylece sticker API'sindeki timeout botun
+    polling başlamasını engellemez.
+    """
+
     logger.info("POST_INIT başladı.")
 
-    # Telegram bağlantısını test et
+    # -----------------------------------------------------
+    # Telegram bağlantı testi
+    # -----------------------------------------------------
+
     try:
         me = await application.bot.get_me()
+
         logger.info(
-            f"TELEGRAM BAĞLANTISI OK: @{me.username} / ID={me.id}"
+            f"TELEGRAM BAĞLANTISI OK: "
+            f"@{me.username} / ID={me.id}"
         )
+
     except Exception as e:
         logger.exception(
-            f"TELEGRAM BAĞLANTI HATASI: {e}"
+            f"TELEGRAM API BAĞLANTI HATASI: {e}"
         )
-        return
 
-    # Eski webhook varsa kaldır
+    # -----------------------------------------------------
+    # Eski webhook'u temizle
+    # -----------------------------------------------------
+
     try:
         await application.bot.delete_webhook(
             drop_pending_updates=True
         )
-        logger.info("Webhook temizlendi.")
+
+        logger.info("Eski webhook temizlendi.")
+
     except Exception as e:
-        logger.exception(
-            f"Webhook temizleme hatası: {e}"
+        logger.warning(
+            f"Webhook temizlenemedi: {e}"
+        )
+
+    # -----------------------------------------------------
+    # TEMALARI ARKA PLANDA YÜKLE
+    # -----------------------------------------------------
+    #
+    # Burada await kullanmıyoruz.
+    #
+    # Eğer sticker setlerinden biri timeout olursa
+    # botun polling başlangıcı beklemeyecek.
+    #
+
+    try:
+        application.create_task(
+            load_themes_background(application)
+        )
+
+        logger.info(
+            "Tema yükleme arka planda başlatıldı."
+        )
+
+    except Exception as e:
+        logger.warning(
+            f"Tema görevi başlatılamadı: {e}"
         )
 
     logger.info("POST_INIT tamamlandı.")
 
 
+# =========================================================
+# ARKA PLAN TEMA YÜKLEME
+# =========================================================
+
+async def load_themes_background(application):
+    """
+    Temaları bot başladıktan sonra arka planda yükler.
+
+    Tema yüklenemese bile bot çalışmaya devam eder.
+    """
+
+    try:
+
+        logger.info(
+            "Sticker temaları yükleniyor..."
+        )
+
+        await load_all_themes(
+            application.bot
+        )
+
+        logger.info(
+            "Sticker temaları yükleme işlemi tamamlandı."
+        )
+
+    except Exception as e:
+
+        logger.warning(
+            f"Sticker temaları yüklenemedi: {e}"
+        )
+
+
+# =========================================================
+# MAIN
+# =========================================================
+
 def main():
 
     logger.info("main() başladı.")
 
+    # -----------------------------------------------------
+    # BOT TOKEN
+    # -----------------------------------------------------
+
     if not BOT_TOKEN:
+
         raise RuntimeError(
-            "BOT_TOKEN bulunamadı! Railway Variables kısmını kontrol et."
+            "BOT_TOKEN bulunamadı! "
+            "Railway > Variables kısmından BOT_TOKEN "
+            "değerini kontrol et."
         )
 
     logger.info("BOT_TOKEN mevcut.")
 
-    # Database
+    # -----------------------------------------------------
+    # DATABASE
+    # -----------------------------------------------------
+
     try:
+
         db.init_db()
-        logger.info("Database hazır.")
+
+        logger.info(
+            "Database hazır."
+        )
+
     except Exception as e:
+
         logger.exception(
             f"Database başlatma hatası: {e}"
         )
+
         raise
 
-    # Normal Telegram istekleri
+    # -----------------------------------------------------
+    # NORMAL TELEGRAM REQUEST
+    # -----------------------------------------------------
+
     request = HTTPXRequest(
-        connect_timeout=30,
-        read_timeout=30,
-        write_timeout=30,
-        pool_timeout=30,
-    )
-
-    # getUpdates için AYRI bağlantı
-    polling_request = HTTPXRequest(
-        connect_timeout=30,
+        connect_timeout=60,
         read_timeout=60,
-        write_timeout=30,
-        pool_timeout=30,
+        write_timeout=60,
+        pool_timeout=60,
+        http_version="1.1",
     )
 
-    logger.info("Application oluşturuluyor...")
+    # -----------------------------------------------------
+    # POLLING REQUEST
+    # -----------------------------------------------------
+
+    polling_request = HTTPXRequest(
+        connect_timeout=60,
+        read_timeout=90,
+        write_timeout=60,
+        pool_timeout=60,
+        http_version="1.1",
+    )
+
+    # -----------------------------------------------------
+    # APPLICATION
+    # -----------------------------------------------------
+
+    logger.info(
+        "Application oluşturuluyor..."
+    )
 
     app = (
         ApplicationBuilder()
@@ -103,41 +222,81 @@ def main():
         .build()
     )
 
-    logger.info("Application oluşturuldu.")
+    logger.info(
+        "Application oluşturuldu."
+    )
 
-    # Komutlar
+    # =====================================================
+    # KOMUTLAR
+    # =====================================================
+
     app.add_handler(
-        CommandHandler("oyun", cmd_oyun)
+        CommandHandler(
+            "oyun",
+            cmd_oyun
+        )
     )
 
     app.add_handler(
-        CommandHandler("bitir", cmd_bitir)
+        CommandHandler(
+            "bitir",
+            cmd_bitir
+        )
     )
 
     app.add_handler(
-        CommandHandler("siralama", cmd_siralama)
+        CommandHandler(
+            "siralama",
+            cmd_siralama
+        )
     )
 
     app.add_handler(
-        CommandHandler("profil", cmd_profil)
+        CommandHandler(
+            "profil",
+            cmd_profil
+        )
     )
 
-    # Inline butonlar
+    # =====================================================
+    # INLINE BUTONLAR
+    # =====================================================
+
     app.add_handler(
-        CallbackQueryHandler(on_callback)
+        CallbackQueryHandler(
+            on_callback
+        )
     )
 
-    logger.info("Handlerlar yüklendi.")
-    logger.info("Bot polling başlatılıyor...")
+    logger.info(
+        "Handlerlar yüklendi."
+    )
+
+    # =====================================================
+    # POLLING
+    # =====================================================
+
+    logger.info(
+        "Bot polling başlatılıyor..."
+    )
 
     app.run_polling(
         drop_pending_updates=True,
+
         allowed_updates=[
             "message",
             "callback_query",
         ],
+
+        # Telegram bağlantısında geçici problem
+        # olursa birkaç kez tekrar dene.
+        bootstrap_retries=5,
     )
 
+
+# =========================================================
+# ÇALIŞTIR
+# =========================================================
 
 if __name__ == "__main__":
     main()
