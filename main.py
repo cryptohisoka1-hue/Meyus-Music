@@ -29,7 +29,6 @@ def main():
     app.add_handler(CommandHandler("oyun", cmd_oyun))
     app.add_handler(CommandHandler("bitir", cmd_bitir))
     app.add_handler(CommandHandler("siralama", cmd_siralama))
-    app.add_handler(CommandHandler("siralama", cmd_siralama))
     app.add_handler(CommandHandler("profil", cmd_profil))
     app.add_handler(CallbackQueryHandler(on_callback))
 
