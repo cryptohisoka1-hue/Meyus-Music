@@ -1,7 +1,0 @@
-.env
-data/*.db
-__pycache__/
-*.pyc
-
-# NOT: file_id_cache.json artık repo'da kalacak
-# data/file_id_cache.json   <-- bu satırı SİL veya yoruma al
