@@ -293,4 +293,4 @@ async def finish_game(chat_id, context: ContextTypes.DEFAULT_TYPE, winner):
         parse_mode="HTML",
     )
     del GAMES[chat_id]
-  
+    
