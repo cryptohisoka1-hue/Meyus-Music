@@ -1,7 +1,6 @@
 import os
-
-BOT_TOKEN = os.getenv("BOT_TOKEN", "TOKENINIZI_BURAYA_YAZIN")
-
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+DATABASE_NAME = "uno_games.db"
 # Depo sohbeti ID'si (kart önbellekleme için)
 # None bırakırsanız oyun grubu kullanılır
 _storage = os.getenv("STORAGE_CHAT_ID", "")
