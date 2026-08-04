@@ -75,11 +75,13 @@ def main():
         .token(BOT_TOKEN)
 
         .request(
-            HTTPXRequest(
-                connect_timeout=15,
-                read_timeout=15,
-            )
-        )
+    HTTPXRequest(
+        connect_timeout=30,
+        read_timeout=30,
+        write_timeout=30,
+        pool_timeout=30,
+    )
+)
 
         .post_init(post_init)
 
