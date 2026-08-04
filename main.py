@@ -37,23 +37,15 @@ logger = logging.getLogger(__name__)
 
 
 async def post_init(application):
-
     try:
-
-        await load_all_themes(
-            application.bot
-        )
-
+        await load_all_themes(application.bot)
     except Exception as e:
-
         logger.warning(
-            "Tema yükleme sırasında hata oluştu, "
-            f"bot yine de başlayacak: {e}"
+            f"Tema yükleme başarısız oldu, "
+            f"bot temalar olmadan devam edecek: {e}"
         )
 
-    logger.info(
-        "Bot hazır."
-    )
+    logger.info("Bot hazır.")
 
 
 def main():
