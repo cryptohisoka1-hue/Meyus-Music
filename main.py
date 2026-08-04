@@ -1,4 +1,5 @@
 import logging
+from telegram.request import HTTPXRequest
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 
 from config import BOT_TOKEN
@@ -14,17 +15,24 @@ logger = logging.getLogger(__name__)
 
 
 async def post_init(application):
-    await load_all_themes(application.bot)
+    try:
+        await load_all_themes(application.bot)
+    except Exception as e:
+        logger.warning(f"Tema yükleme sırasında hata oluştu, bot yine de başlayacak: {e}")
     logger.info("Bot hazır.")
-
-
 def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN ortam değişkeni tanımlı değil! Railway Variables kısmına ekle.")
 
     db.init_db()
 
-    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
+    app = (
+    ApplicationBuilder()
+    .token(BOT_TOKEN)
+    .request(HTTPXRequest(connect_timeout=15, read_timeout=15))
+    .post_init(post_init)
+    .build()
+)
 
     app.add_handler(CommandHandler("oyun", cmd_oyun))
     app.add_handler(CommandHandler("bitir", cmd_bitir))
