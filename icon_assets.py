@@ -1,272 +1,58 @@
-"""Pas geç, bilgi ve kilitli kart ikonlarının base64 kodlu görselleri.
+"""
+icon_assets.py dosyanızdaki, base64 satırlarının başına yanlışlıkla
+karışmış "79\t", "156\t" gibi satır numarası öneklerini temizler.
 
-Bu ikonlar GitHub deposundaki assets klasörüne yüklenmeye gerek kalmadan
-doğrudan koddan Telegram'a gönderilir.
+Hiçbir base64 karakterine dokunmaz; sadece satır başındaki
+   <rakamlar><TAB veya boşluklar>
+kalıbını, kendisinden sonra bir tırnak (") geliyorsa siler.
+
+Kullanım:
+    python fix_icon_assets.py /path/to/icon_assets.py
+
+Çıktı olarak aynı klasöre "icon_assets.fixed.py" yazar.
+Orijinal dosyanıza dokunmaz.
 """
 
-import base64
-from io import BytesIO
+import re
+import sys
+import ast
 
 
-# ============================================================
-# PAS GEÇ İKONU
-# ============================================================
-
-PASS_ICON_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAfQAAALWCAYAAACwWmEqAAAR8UlEQVR4nO3dS3IbVxJAUVDhxZiL9MiLpHbDHrQl62cKQNb31jlj"
-    "iUIEK/P6vWLQL7eDeH9/f9/7MwDAo15eXl72/gy32+2224cQcACK9gr8pv+oiANwJVvGffV/SMQBYP24r/bFhRwAfrZW2Bf/okIO"
-    "AL+3dNg/LfnFxBwA7rN0Mxf5rwMhB4DnLXFaH5/QxRwAZpZo6SjoYg4Ay5g29akj/lohf319XePLAsAq3t7eVvm6z1zBP/wXloy5"
-    "gANQsmTgH436Q394iZiLOABXsETcH4n63X9wGnMhB+CKpmG/N+qrB13IAeD5sN8b9Lt+yl3MAWDm2Sbe2+DfBl3MAWAZa0b9w2P8"
-    "MzEXcgD4vWeu4D+6fl/0d7mLOQDcZ+lm/mfQHz2dizkAPObRdn7U5l8GXcwBYBtLRX3RK3cAYB8/Bd3pHAC2tcQpfXRCF3MAWMa0"
-    "qd8F/ZHTuZgDwLIeaeuPzfYOHQACngq60zkArOPZxn4N+pL/n3MAYH3ftvvhE7rTOQCs65nWeocOAAGfbjfX7QBwVl8a/tAJ3XU7"
-    "AGzj0ea6cgeAAEEHgIBP3p8DwLm9v7+/331C9/4cALb1SHtduQNAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANA"
-    "gKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKAD"
-    "QICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICg"
-    "A0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CA"
-    "oANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANA"
-    "gKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKAD"
-    "QICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICg"
-    "A0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CA"
-    "oANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANA"
-    "gKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKAD"
-    "QICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICg"
-    "A0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQICgA0CA"
-    "oANAgKADQICgA0CAoANAgKADQICgA0CAoANAgKADQMAfe3+Aq3j76/Pt9e8/9/4YcGrm6Jre/vr81N+72rPihL6hZx9K4F/m6Dre/vo8"
-    "+n5P//7ZCPrGrvaAwRrMUd+S39+rPCuCvpOrPGCwJnPUtMb39QrPiqDv6AoPGKzNHLWs+f2sPyuCvrP6AwZbMEcg6IfgfSDMmaPz"
-    "2+L7V35GBP1Ayg8abMUccVWCfjCWEcyZI65I0A/I1SHMmSOuRtAPzDKCOXPEVQj6wVlGMGeOuAJBPwFXhzBnjqgT9BOxjGDOHFEl"
-    "6CdjGcGcOaJI0E/IMoI5c0SNoJ+U94EwZ44oEfSTs4xgzhxRIOgBlhHMmSPOTtAjXB3CnDnizAQ9xjKCOXPEGQl6kGUEc+aIsxH0"
-    "KMsI5swRZyLoYd4Hwpw54iwE/QIsI5gzRxydoF+EZQRz5ogjE/QLcXUIc+aIoxL0C7KMYM4ccTSCflGWEcyZI45E0C/M1SHMmSOO"
-    "QtCxjGAB5oi9CTq3280ygiWYI/Yk6HxlGcGcOWIvgs53vA+EOXPEHgSdX7KMYM4csSVB5z9ZRjBnjtiKoPMhV4cwZ47YgqBzF8sI"
-    "5swRaxJ07mYZwZw5Yi2CzkMsI5gzR6xB0HmY94EwZ45YmqDzNMsI5swRSxF0RiwjmDNHLEHQGXN1CHPmiClBZzGWEcyZI54l6CzK"
-    "MoI5c8QzBJ3FuTqEOXPEowSd1VhGMGeOuJegsyrLCObMEfcQdFZnGcGcOeJ3BJ1NeB8Ic+aIjwg6m7KMYM4c8SuCzuYsI5gzR/xI"
-    "0NmFq0OYM0d8S9DZlWUEc+aI203QOQDLCObMEYLOIVhGMGeOrk3QOQzvA2HOHF2XoHM4lhHMmaPrEXQOyTKCOXN0LYLOYbk6hDlz"
-    "dB2CzuFZRjBnjvoEnVOwjGDOHLUJOqfh6hDmzFGXoHM6lhHMmaMeQeeULCOYM0ctgs5pWUYwZ446BJ1T8z4Q5sxRg6CTYBnBnDk6"
-    "N0EnwzKCOXN0XoJOiqtDmDNH5yToJFlGMGeOzkXQybKMYM4cnYegk2YZwZw5OgdBJ8/7QJgzR8cn6FyGZQRz5ui4BJ1LsYxgzhwd"
-    "k6BzOa4OYc4cHY+gc1mWEcyZo+MQdC7NMoI5c3QMgs7luTqEOXO0P0GHf1hGMGeO9iPo8A3LCObM0T4EHX5gGcGcOdqeoMMveB8I"
-    "c+ZoW4IOH7CMYM4cbUPQ4QOvf/+590eA0zNH2/hj7w8AR2QBwZw52pYTOvzAEoI5c7Q9QYdvWEIwZ472IejwD0sI5szRfrxD5/Is"
-    "IJgzR/tzQufSLCGYM0fHIOhcliUEc+boOFy5czkWEMyZo+NxQudSLCGYM0fHJOhchiUEc+bouFy5k2cBwZw5Oj4ndNIsIZgzR+cg"
-    "6GRZQjBnjs5D0EmyhGDOHJ2Ld+ikWEAwZ47OyQmdDEsI5szReQk6CZYQzJmjc3PlzqlZQDBnjhqc0DktSwjmzFGHoHNKlhDMmaMW"
-    "Qed0LCGYM0c93qFzGhYQzJmjLid0TsESgjlz1CboHJ4lBHPmqM+VO4dlAcGcOboOJ3QOyRKCOXN0LYLO4VhCMGeOrseVO4dhAcGc"
-    "ObouJ3QOwRKCOXN0bYLO7iwhmDNHCDq7soRgzhxxu3mHzk4sIJgzR3zLCZ3NWUIwZ474kaCzKUsI5swRv+LKnU1YQDBnjviIEzqr"
-    "s4RgzhzxO4LOqiwhmDNH3EPQWY0lBHPmiHt5h87iLCCYM0c8ygmdRVlCMGeOeIagsxhLCObMEc9y5c6YBQRz5ogpJ3RGLCGYM0cs"
-    "QdB5miUEc+aIpbhy52EWEMyZI5bmhM5DLCGYM0esQdC5myUEc+aItQg6d7GEYM4csSbv0PmQBQRz5ogtOKHznywhmDNHbEXQ+SVL"
-    "CObMEVty5c53LCCYM0fswQmdrywhmDNH7EXQud1ulhAswRyxJ0HHEoIFmCP25h36hVlAMGeOOAon9IuyhGDOHHEkgn5BlhDMmSOO"
-    "xpX7hVhAMGeOOCon9IuwhGDOHHFkgn4BlhDMmSOOzpV7mAUEc+aIs3BCj7KEYM4ccSaCHmQJwZw54mwEPcYSgjlzxBl5hx5hAcGc"
-    "OeLMnNADLCGYM0ecnaCfnCUEc+aIAlfuJ2UBwZw5osQJ/YQsIZgzR9QI+slYQjBnjigS9BOxhGDOHFHlHfoJWEAwZ46oc0I/OEsI"
-    "5swRVyDoB2YJwZw54ipcuR+QBQRz5oircUI/GEsI5swRVyToB2IJwZw54qpcuR+ABQRz5uj8Xv/+8/b21+fV/40qJ/SdlR8u2Io5"
-    "AkHflSUEc+aoZc3vZ/1ZEfSd1B8s2II5alrj+3qFZ8U79I1d4aGCtZmjviXfp1/leRH0DV3loYI1maPr+PKv/jbsV3tWXt7f39/v"
-    "+YOvr69rfxYA4Advb293/Tnv0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQ"
-    "ASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA"
-    "0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEg"
-    "QNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNAB"
-    "IEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQ"
-    "ASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA"
-    "0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEg"
-    "QNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNAB"
-    "IEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQASBA0AEgQNABIEDQ"
-    "ASBA0AEg4O6gv729rfk5AIAfPNLeTy8vLy8rfhYAYGUvLy8vrtwBIEDQASDgoaB7jw4A23i0uZ9ut//fva/yaQCAVX1puCt3AAh4"
-    "OOiu3QFgXc+09mvQXbsDwLl82+6nrtyd0gFgHc821jt0AAj4LuiPXLs7pQPAsh5p64/NHp3QRR0AljFt6k9Bf/SH40QdAGYebemv"
-    "Wu0dOgAE/DLoTukAsI0lTue32wcndFEHgHUtFfPbbeErd1EHgPss3czfnsLf39/fn/nCr6+vz/w1AEh7NuS/uzn/7Qn92V8J67QO"
-    "AN9bK+a3251X7qIOADNrxvx2u+PK/Ytnr96/cAUPwBVND7eLB/12m0f9dhN2AK5hiVvqR27IH75KXyLqX4g7ACVLvmp+9HX3U+/G"
-    "l4z6twQegDNZ62fFnvnZtaeC/sVaYQeAK3r2h9Bvt+Evlpn8wwDAv6ZNHf+mOFEHgJklWrpojF3BA8D9ljwUL/q73J3WAeA+Szdz"
-    "tQA7rQPAz9Y6/K5+ohZ2AFj/FnvTK3JxB+BKtnwVvds7b3EHoGivnyc7zA+xCTwAZ3SUHwj/H8ul1macUqhaAAAAAElFTkSuQmCC"
-)
+def clean_line_number_prefixes(text: str) -> str:
+    # Satır başındaki "  79\t"  veya  "156\t" gibi
+    # (boşluk*)(rakamlar)(tab/boşluklar)(") kalıbını temizler.
+    pattern = re.compile(r'^[ \t]*\d+\t(?=\s*")', re.MULTILINE)
+    return pattern.sub("", text)
 
 
-# ============================================================
-# BİLGİ İKONU
-# ============================================================
+def main():
+    if len(sys.argv) != 2:
+        print("Kullanım: python fix_icon_assets.py /path/to/icon_assets.py")
+        sys.exit(1)
 
-INFO_ICON_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAfQAAALWCAYAAACwWmEqAAAjU0lEQVR4nO3de5DV9X3/8ffhsgoGQQgoERDRBrRKlRpBJbHeYqqC"
-    "ErXVSOLUO9A0MtYm1cwo5uJ4izZM0opSa43xgsRgjMmgxlKjmNiUmBiBxioKFCsBUZHV5bK/P34/+SUqsJez+9nzPo/HDKPOrLuv"
-    "cQaefj/ne76nEl1Ec3Nzc+kNANBalUqlUnpDRESxEQIOQEalAt+pP1TEAagnnRn3Dv9BIg4AHR/3DvvmQg4A79dRYa/6NxVyANix"
-    "aoe9WzW/mZgDQMtUu5lV+b8DIQeAtqvG1Xq7r9DFHADapxotbVfQxRwAqqO9TW3TJX5HhXzgwIEd8W0BoEOsXr26Q75vW47gW/0v"
-79	    "VDPmAg5AJtUMfGuj3qovrkbMRRyAelCNuLcm6i3+wvbGXMgBqEftDXtLo97hQRdyAGh72Fsa9Bbd5S7mANA+bW1iSxu8w6CLOQBU"
-80	    "R0dGfbuX8W2JuZADwI615Qh+e8fvVX2Wu5gDQMtUu5nbDHprr87FHABap7Xt3F6bPzDoYg4AnaNaUa/qkTsAUMb7gu7qHAA6VzWu"
-81	    "0tt1hS7mAFAd7W3qHwS9NVfnYg4A1dWatr632V5DB4AE2hR0V+cA0DHa2titQa/m55wDAB3v99vd6it0V+cA0LHa0lqvoQNAAt0i"
-82	    "HLcDQK16t+GtukJ33A4AnaO1zXXkDgAJCDoAJNDN6+cAUNuam5ubW3yF7vVzAOhcrWmvI3cASEDQASABQQeABAQdABIQdABIQNAB"
-83	    "IAFBB4AEBB0AEhB0AEhA0AEgAUEHgAQEHQASEHQASEDQASABQQeABAQdABIQdABIQNABIAFBB4AEBB0AEhB0AEhA0AEgAUEHgAQE"
-84	    "HQASEHQASEDQASABQQeABAQdABIQdABIQNABIAFBB4AEBB0AEhB0AEhA0AEgAUEHgAQEHQASEHQASEDQASABQQeABAQdABIQdABI"
-85	    "QNABIAFBB4AEBB0AEhB0AEhA0AEgAUEHgAQEHQASEHQASEDQASABQQeABAQdABIQdABIQNABIAFBB4AEBB0AEhB0AEhA0AEgAUEH"
-86	    "gAQEHQASEHQASEDQASABQQeABAQdABIQdABIQNABIAFBB4AEBB0AEhB0AEhA0AEgAUEHgAQEHQASEHQASEDQASABQQeABAQdABIQ"
-87	    "dABIQNABIAFBB4AEBB0AEhB0AEhA0AEgAUEHgAQEHQASEHQASEDQASABQQeABAQdABIQdABIQNABIAFBB4AEBB0AEhB0AEhA0AEg"
-88	    "AUEHgAQEHQASEHQASEDQASABQQeABAQdABIQdABIQNABIAFBB4AEBB0AEhB0AEhA0AEgAUEHgAQEHQASEHQASEDQASABQQeABAQd"
-89	    "ABIQdABIQNABIAFBB4AEBB0AEhB0AEhA0AEgAUEHgAQEHQASEHQASEDQASABQQeABAQdABIQdABIQNABIAFBB4AEBB0AEhB0AEhA"
-90	    "0AEgAUEHgAQEHQASEHQASEDQASABQQeABAQdABIQdABIQNABIAFBB4AEBB0AEhB0AEhA0AEgAUEHgAQEHQASEHQASEDQASABQQeA"
-91	    "BAQdABIQdABIQNABIAFBB4AEepQeAPVq1113jUGDBsXAgQO3/rVv377Rr1+/6NevX/Tt2zd23XXX6N27d/Tq1St69+4dvXv3joaG"
-92	    "hujevXv06NEjunfvHt27d4/m5ubYvHnz1l+bNm2KzZs3R1NTUzQ2NkZjY2Ns2LAhNmzYEI2NjfHmm2/GunXrYt26dfHaa69t/ftX"
-93	    "X301/vd//zdeffXV2Lx5c+n/REArCDp0kN133z1GjBgRw4cPj6FDh8aQIUNizz33jKFDh8ZHPvKR2Gmnnar2syqVSnTr1i169uxZ"
-94	    "le+3ZcuWWLNmTbzyyyuxatWqePnll2PZsmXx0ksvxUsvvRTLli2LxsbGqvwsoDoqzc3NzS35woEDB3b0Fqg5DQ0Nsc8++8TIkSNj"
-95	    "1KhR8dGPfjRGjBgRe++9d/Tu3bv0vA61YsWKWLp0aSxZsiSWLFkSS5cujcWLF8fbb79dehqksnr16hZ9naBDCw0YMCBGjx4dBxxw"
-96	    "QBx44IFxwAEHxN577x09ejjoetemTZti6dKl8ctf/jIWLVoUixYtiueeey42bdpUehrULEGHdujTp08cdNBBMWbMmBgzZkwcfPDB"
-97	    "MXjw4NKzatKGDRvi5z//eTz55JPx5JNPxqJFi6Kpqan0LKgZgg6tMHz48Bg3blyMHTs2DjnkkPjoRz8a3bp5E0hHeOedd+LJJ5+M"
-98	    "+fPnxyOPPBLLli0rPQm6NEGHbahUKjFq1KgYP358HHbYYTF27NgYNGhQ6Vl16/nnn4+HH344HnjggfjFL34RLfwjCeqGoMPv2Xff"
-99	    "fePjH/94jB8/Po444ogYMGBA6Ul8gBUrVsS8efNi3rx5sWjRotJzoEsQdOpa//794xOf+EQcddRR8Wd/9mfxkY98pPQkWun555+P"
-100	    "O++8M+65554W/4EGGQk6daVbt24xZsyYOO644+Loo4+O0aNHew08iY0bN8b8+fPj9ttvj3/7t39zJE/dEXTS69u3bxx11FFx3HHH"
-101	    "xbHHHhv9+/cvPYkOtnTp0vinf/qnmDNnTrzzzjul50CnEHRSGjZsWPz5n/95nHDCCXHooYd6D3idWrNmTdx6660xa9aseOONN0rP"
-102	    "gQ4l6KTxJ3/yJ1sjvt9++5WeQxeybt26+Md//MeYNWtWrF+/vvQc6BCCTs2qVCpxyCGHxMSJE+Okk06KIUOGlJ5EF7d27dqYOXNm"
-103	    "zJo1y0NrSEfQqSndunWLcePGxYQJE+LEE0/0VDbaZNmyZXHFFVfEQw89VHoKVI2g0+W9eyU+adKkmDhxYuy+++6lJ5HEv//7v8ff"
-104	    "//3fx3/913+VngLtJuh0WaNHj45JkybFySefHEOHDi09h6SamprihhtuiJkzZ8bGjRtLz4E2E3S6pP79+8fSpUtLz6COPPfcc/E3"
-105	    "f/M38cwzz5SeAm3S0qB78gaQ2v777x8//vGP4+KLL45KpVJ6DnQYQQfS69GjR1x++eUxZ84cH8RDWoIO1I0jjzwyFixYEOPHjy89"
-106	    "BapO0IG68uEPfzjmzJkTf/VXf1V6ClSVoAN1p0ePHnHttdfGNddc4/HBpCHoQN0655xz4jvf+U7svPPOpadAuwk6UNeOOeaYmDNn"
-107	    "Tuy6666lp0C7CDpQ98aNGxff//73Y8CAAaWnQJsJOkBEHHjggTF37tzo169f6SnQJoIO8P/88R//cdx1112xyy67lJ4CrSboAL/n"
-108	    "kEMOiTvuuCMaGhpKT4FWEXSA9/j4xz8eN910U+kZ0CqCDvABTj/99Lj44otLz4AWE3SAbbjsssvixBNPLD0DWkTQAbahUqnEzJkz"
-109	    "Y6+99io9BXZI0AG2o0+fPnHLLbdEz549S0+B7RJ0gB04+OCD4/LLLy89A7ZL0AFaYOrUqTFu3LjSM2CbBB2gBSqVStx4443en06X"
-110	    "JegALbTvvvvG3/7t35aeAR9I0AFa4a//+q9j5MiRpWfA+wg6QCv07NkzrrzyytIz4H0EHaCVjj322PjEJz5Regb8AUEHaIMrr7wy"
-111	    "KpVK6RmwlaADtMGBBx7osbB0KYIO0EbTp08vPQG2EnSANho9enQcffTRpWdARAg6QLt84QtfKD0BIkLQAdrl8MMPj1GjRpWeAYIO"
-112	    "0F5nn3126Qkg6ADtdfrpp8fOO+9cegZ1TtAB2qlv374xceLE0jOoc4IOUAWTJk0qPYE6J+gAVXDkkUdGv379Ss+gjgk6QBX07Nkz"
-113	    "TjjhhNIzqGOCDlAlEyZMKD2BOtaj9ACoJ2vWrInly5fHihUrtv517dq1sXbt2njttddi7dq10djYGE1NTfHOO99EU1NTVCqV2Gnn"
-114	    "nbb+2mWXXWLQoEFbfw0ePDhGjhwZo0aNiiFDhvjAkIKOOOKIaGhoiKamptJTqEOCDh1g/fr18cwzz8TixYtjyZIlsWTJkli6dGms"
-115	    "W7euTd9v06ZN8dZbb2395+eff/4Dv653795xwAEHxPjx4+Pwww+PQw89NHr16tWmn0nr9erVK8aOHRuPP/546SnUoUpzc3NzS35w"
-116	    "4MCBHb2FOtC/f/9YunRp6RlVt3Tp0li4cGEsWrQoFi1aFEuXLo0tW7aUnhUNDQ0xzDHHxKRJk+L444+P3r17l56U3syZM+Oqq64q"
-117	    "PYNEVq9e3aKvE3Q6VZagv/DCC/H444/HT3/60/jpT38av/vd70pP2qFevXrFqaeeGlOnTo0/+qM/Kj0nrV/96ldxzDHHlJ5BIoJO"
-118	    "l1SrQW9qaoqnnnoq5s+fH/Pnz48XX3yx9KQ2q1Qqcfzxx8ell14ao0ePLj0nnU2bNsWIESOisbGx9BSSEHS6pFoKemNjYzzyyCMx"
-119	    "b968ePTRR2P9+vWlJ1VVt27d4qyzzorLL788BgwYUHpOKhMnToyFCxeWnkESLQ26t63B73nnnXfiBz/4QZx33nkxcuTIOOecc2Le"
-120	    "vHnpYh4RsWXLlrjjjjti7Nixcf/995eek8ohhxxSegJ1yF3uEBFPP/103H333fH9738/3njjjdJzOtXrr78eF1xwQSxYsCCuvvpq"
-121	    "d8VXwZgxY0pPoA4JOnXrlVdeibvuuivuuuuumn5NvFruvPPOeOaZZ+Lee+/1Els77b///qUnUIcEnbrS3Nwcjz/+eNx2223x4x//"
-122	    "ODZt2lR6Upfy7LPPxgknnBBz586NYcOGlZ5Ts/baay8PmKHTeQ2duvDmm2/GzTffHIcddliceuqp8eCDD4r5NixbtixOOumkWLly"
-123	    "ZekpNat79+6xzz77lJ5BnXGFTnorVqyIW265Je6444548803S8+pGatWrYozzzwzfvjDH0afPn1Kz6lJI0eOjMWLF5eeQR1xhU5K"
-124	    "v/zlL+OCCy6Ij33sY/Htb39bzNtg8eLFce6550YL39nKe+y9996lJ1BnBJ1UnnrqqfiLv/iLOO644+L+++93rN5Ojz32WMyePbv0"
-125	    "jJq05557lp5AnRF0UliwYEGcfPLJMWHChHjsscdKz0nlqquu8i6ANhB0OpugU9MWLFgQn/rUp+K0006LJ598svSclBobG+PLX/5y"
-126	    "6Rk1R9DpbIJOTXr66afjlFNOidNOOy1+8YtflJ6T3vz58/13bqXBgweXnkCdEXRqyrPPPhuf+cxn4oQTTognnnii9Jy6cs0115Se"
-127	    "UFP69u0b3bt3Lz2DOiLo1ISVK1fGtGnT4uijj46HH3649Jy69Nhjj8WyZctKz6gZlUoldt1119IzqCOCTpf25ptvxte+9rUYO3Zs"
-128	    "3Hvvvd5CVdg999xTekJNEXQ6k6DTJW3evDluu+22OPTQQ+Omm26Kd955p/QkIuLee+8tPaGm9OvXr/QE6ognxdHlPPXUU/GlL30p"
-129	    "fvOb35Sewnu8/PLL8eKLL3poSgt5yh6dyRU6XcaqVavioosuigkTJoh5F+ZmxJbr2bNn6QnUEUGnuI0bN8Y3v/nNOOyww2Lu3Lml"
-130	    "57AD3u/fcg0NDaUnUEccuVPUz372s7jkkkti6dKlpafQQkuWLCk9oWa4QqczCTpFrFu3Lq666qr4zne+4871GuMxsC0n6HQmR+50"
-131	    "uvvuuy/GjRsXd9xxh5jXoPXr18fvfve70jNqQqVSKT2BOiLodKq1a9fGlClTYs2aNaWn0A6vvPJK6Qk1oampqfQE6oigA622YcOG"
-132	    "0hNqgqDTmQQdaLW33nqr9ISasHHjxtITqCOCDrRaY2Nj6Qk1wRMO6UyCDrSa91e3jJMMOpOgA6228847l55QE9auXVt6AnVE0IFW"
-133	    "GzBgQOkJNUHQ6UyCDrTa4MGDS0/o8pqamhy506kEHWiVPn36+FjQFvCsBTqboAOtsv/++5eeUBP+53/+p/QE6oygA61ywAEHlJ5Q"
-134	    "E1566aXSE6gzgg60yrhx40pPqAmCTmcTdKBVDj/88NITasKyZctKT6DOCDrQYqNHj45BgwaVnlETBJ3OJuhAi02YMKH0hJrx3HPP"
-135	    "lZ5AnRF0oMUmTpxYekJNWL58eaxbt670DOqMoAMtcsQRR8SIESNKz6gJv/rVr0pPoA4JOtAin/3sZ0tPqBm//vWvS0+gDgk6sEN7"
-136	    "7rmn4/ZWWLRoUekJ1CFBB3Zo2rRp0bNnz9IzasKmTZviZz/7WekZ1CFBB7Zrjz32iMmTJ5eeUTMWLVrkQ1koQtCB7friF78YvXr1"
-137	    "Kj2jZjzxxBOlJ1CnBB3YplGjRsWZZ55ZekZNefzxx0tPoE4JOrBN1113XXTv3r30jJrx+uuvx8KFC0vPoE4JOvCBzjjjDB/E0krz"
-138	    "58+PjRs3lp5BnRJ04H322GOP+MpXvlJ6Rs156KGHSk+gjgk68D7f/OY3o1+/fqVn1JS33377Hn300dIzqGOCDvyB8847L4466qjS"
-139	    "M2rOgw8+GI2NjaVnUMcEHdjqoIMOihkzZpSeUZPuvPPO0hOoc4IOREREv379Yvbs2dHQ0FB6Ss1ZtmyZ959TnKAD0b1795g1a1YM"
-140	    "Gzas9JSadOedd0Zzc3PpGdQ5QQdixowZXjdvo6amJsftdAmCDnXuc5/7XFx44YWlZ9Ssu+66K1avXl16Bgg61LNPfvKTce2115ae"
-141	    "UbO2bNkS3/rWt0rPgIgQdKhbY8aMiVtvvdWjXdvhhz/8Ybz44oulZ0BECDrUpf322y/uvvtun6LWDs3NzfGNb3yj9AzYStChzuy9"
-142	    "995x3333xW677VZ6Sk2777774tlnny09A7YSdKgjw4YNi+9973sxaNCg0lNqWlNTU1x99dWlZ8AfEHSoE3vttVfMmzcvhgwZUnpK"
-143	    "zZs9e3YsX7689Az4A4IOdWD48OFiXiVr1qyJG2+8sfQMeB9Bh+RGjRoVP/jBD2LPPfcsPSWFK664Il577bXSM+B9BB0SO/jgg2Pe"
-144	    "vHmxxx57lJ6SwhNPPBH33HNP6RnwgQQdkho/fnx873vfi/79+5eekkJTU1NceumlpWfANgk6JHTSSSfFPffcEx/60IdKT0njpptu"
-145	    "it/+9relZ8A2CTokc/bZZ/sY1CpbtGiRG+Ho8gQdErnkkkvi+uuvj27d/NaulrfffjumTp0amzZtKj0FtqtH6QFA+3Xr1i2+9rWv"
-146	    "xXnnnVd6SjozZsyI559/vvQM2CFBhxrX0NAQ3/rWt+KUU04pPSWdn/zkJzF79uzSM6BFBB1q2C677BK33357HHnkkaWnpLNy5cqY"
-147	    "MmVKNDc3l54CLSLoUKMGDBgQd999dxx00EGlp6SzcePGOP/882Pt2rWlp0CLCTrUoKFDh8acOXNin332KT0lpRkzZsTTTz9dega0"
-148	    "ilthocbst99+8dBDD4l5B3nwwQfj5ptvLj0DWk3QoYYceuih8cADD3iUawf5zW9+E9OmTSs9A9pE0KFGfPKTn4y5c+dGv379Sk9J"
-149	    "afXq1TF58uTYsGFD6SnQJoIONeAv//Iv4/bbb4+dd9659JSUmpqa4uyzz44VK1aUngJtJujQxZ1zzjkxc+bM6NHDPawdZfr06W6C"
-150	    "o+YJOnRhn//85+Oaa66JSqVSekpa1157bdx7772lZ0C7+V9+6KK+9KUvxSWXXFJ6Rmq33357XHfddaVnQFUIOnRBX/3qV+PCCy8s"
-151	    "PSO1H/3oR/HFL36x9AyoGkGHLqRSqcQNN9wQn/3sZ0tPSe3nP/95XHDBBbF58+bSU6BqBB26iEqlEt/4xjdi8uTJpaektnjx4jjr"
-152	    "rLPi7bffLj0FqkrQoQuoVCpx4403xllnnVV6SmrPP/98nHrqqbFu3brSU6Dq3OUOhYl553jppZfi05/+dKxevbr0FOgQgg4FiXnn"
-153	    "WLlyZUyaNClWrVpVegp0GEGHgq6//nox72CvvvpqfPrTn47ly5eXngIdStChkBkzZsTnPve50jNSW7VqVZx88snxwgsvlJ4CHc5N"
-154	    "cVDA3/3d38XUqVNLz0htxYoVMWnSpFi2bFnpKdApBB062ZQpU+LSSy8tPSO15cuXx8knn+yYnbriyB060eTJk+Oqq64qPSO1F198"
-155	    "MSZMmCDm1B1Bh05y/PHHx/XXX196RmqLFy+OiRMnxsqVK0tPgU4n6NAJ/vRP/zRuueWW6N69e+kpaS1cuDAmTJgQr7zySukpUISg"
-156	    "QwcbMWJEfPe7341evXqVnpLWgw8+GKeddlq8/vrrpadAMYIOHejDH/5w3HPPPdG/f//SU9KaPXt2nHvuudHU1FR6ChTlLnfoIA0N"157	    "DfGv//qvMXz48NJT0vr6178eN954Y+kZ0CUIOnSQG264IT72sY+VnpHSpk2bYvr06XH
-)
+    src_path = sys.argv[1]
+    with open(src_path, "r", encoding="utf-8") as f:
+        original = f.read()
 
+    cleaned = clean_line_number_prefixes(original)
 
-# ============================================================
-# KİLİTLİ İKON
-# ============================================================
-
-LOCKED_ICON_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAfQAAALWCAYAAACwWmEqAAAQp0lEQVR4nO3dO3YbRxqAUXgOdzKJY0UOtCYlxjLg"
-    "xGtS4Eixk9nLRLRoSiTxqH7U1/emkoBCo09/+qtxgNMJAAAAAAAAAAAAAAAAAAAAvvtl6wVc68uX3//aeg0AHNOf"
-    "f/7x29Zr+Mhugy7gAOzVHgO/q6CLOACz2UvcNw+6iANQsWXcNwu6kANQtUXYVw+6kANwFGuG/T9rPdHpJOYAHMua"
-    "3VtlQhdyAI5u6Wl98QldzAFg+R4uGnQxB4DvluziIlvuSy3427dvfy/xuADwlk+fPv26xOOO3oIfHvSRMRdwAPZm"
-    "ZOBHRn1o0EfEXMQBmMWIuI+K+rCgPxpzIQdgVo+GfUTUnx59gEcJOQCze27ZUvfbrzHkU+73TudiDkDJvV0bccv6"
-    "4aCLOQB8t1XUH7qHfs+TCzkAR3HPFvy999NX/S53MQfgSNbs3t1Bv3U6F3MAjujW/t279X5X0MUcAK63RtRX3XIH"
-    "AJZxc9BN5wBwu6Wn9EUndDEHgO+W7OJNQb/lfwtiDgA/uqWPt3TXPXQACFgk6KZzAHjbEp28Ougjf+ccALjOtf0d"
-    "PqGbzgHgY6N76R46AARcFXTb7QCwnWs6PHRCt90OANcb2U1b7gAQIOgAEPBh0N0/B4DtfdTjYRO6++cAcLtR/bTl"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4A"
-    "AYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4AAYIOAAGC"
-    "DgABgg4AAYIOAAGCDgABgg4AAYIOAAGCDgABgg4CAYUH/9OnTr6MeCwCOYlQ/Pwz6n3/+8duIJwIA7vdRj225"
-    "A0CAoANAwNCgu48OANcb2c2rgu4+OgBs55oO23IHgIDhQbftDgAfG93Lq4Nu2x0A1ndtfxfZcjelA8Dbluike+gA"
-    "EHBT0G/ZdjelA8CPbunjLd1ddEIXdQD4bsku3hz0Wz8cJ+oAcHsPb+2te+gAEHBX0E3pAHC9pafz0+mBCV3UAeBj"
-    "a8T8dFp5y13UATiSNbv3y6MP8OXL73/d8+++ffv296PPDQB7dG/IH/lW1ocn9Huf3LQOQNEWMT+dBm25izoAbBfz"
-    "0+l0enr0AR71/OJtwQMwqz0MqA/fQ3/p3vvpLwk7ALMYEfJRv2Y6NOin05ioPxN3APZm5DQ+8qfJhwf9dBob9ZcE"
-    "HoC1LbWdPjLmp9NCQX+2VNgBYFajQ/5s0S+WWWrRADCjJbu4+DfFiToALN/DRbfcX7MFD8DRrDXYrvpd7uZ1AI5k"
-    "ze6tOqG/ZFoHoGqLAXazoD8TdgAqttyJ3jzoL4k7ALPZy+3kXQX9JXEHYK/2EvGXdhv01wQegK3sMeAAAAAAAAAA"
-    "AAAAAAAAsKD/AykxZ1GSX9rHAAAAAElFTkSuQmCC"
-)
-
-
-# ============================================================
-# BYTESIO YARDIMCISI
-# ============================================================
-
-def _base64_to_bytesio(data: str, name: str) -> BytesIO:
-    """
-    Base64 verisini Telegram tarafından kullanılabilecek
-    BytesIO nesnesine dönüştürür.
-    """
-
-    if not data:
-        raise ValueError(
-            f"{name} base64 verisi boş. "
-            f"{name}_B64 değişkenine ikonun base64 verisini ekleyin."
-        )
-
+    # Doğrulama: dosya artık geçerli Python olarak parse ediliyor mu?
     try:
-        raw = base64.b64decode(data)
-    except Exception as exc:
-        raise ValueError(
-            f"{name} base64 verisi geçersiz."
-        ) from exc
+        ast.parse(cleaned)
+        print("✅ Temizlenen dosya geçerli Python sözdizimine sahip.")
+    except SyntaxError as e:
+        print(f"⚠️  Temizlikten sonra hâlâ SyntaxError var: {e}")
+        print("Dosyayı yine de yazıyorum, ama satırı elle kontrol etmeniz gerekebilir.")
 
-    stream = BytesIO(raw)
-    stream.name = f"{name.lower()}.png"
-    stream.seek(0)
+    out_path = src_path.rsplit(".", 1)[0] + ".fixed.py"
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(cleaned)
 
-    return stream
-
-
-# ============================================================
-# TELEGRAM'DA KULLANILACAK İKONLAR
-# ============================================================
-
-def get_pass_icon() -> BytesIO:
-    """Pas geç ikonunu BytesIO olarak döndürür."""
-    return _base64_to_bytesio(
-        PASS_ICON_B64,
-        "PASS_ICON"
-    )
-
-def get_info_icon() -> BytesIO:
-    """Bilgi ikonunu BytesIO olarak döndürür."""
-    return _base64_to_bytesio(
-        INFO_ICON_B64,
-        "INFO_ICON"
-    )
-
-def get_locked_icon() -> BytesIO:
-    """Soluk/kilitli kart ikonunu BytesIO olarak döndürür."""
-    return _base64_to_bytesio(
-        LOCKED_ICON_B64,
-        "LOCKED_ICON"
-    )
+    n_removed = len(re.findall(r'^[ \t]*\d+\t(?=\s*")', original, re.MULTILINE))
+    print(f"Temizlenen satır sayısı: {n_removed}")
+    print(f"Düzeltilmiş dosya yazıldı: {out_path}")
 
 
-# ============================================================
-# MAIN.PY UYUMLULUĞU
-# ============================================================
-
-# main.py şu şekilde kullanıyorsa:
-#
-# from icon_assets import pass_icon_bytes, info_icon_bytes, locked_icon_bytes
-#
-# aşağıdaki değişkenler hazırdır.
-
-pass_icon_bytes = get_pass_icon()
-info_icon_bytes = get_info_icon()
-locked_icon_bytes = get_locked_icon()
+if __name__ == "__main__":
+    main()
+    
