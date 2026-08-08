@@ -180,7 +180,6 @@ def gunluk_rastgele_saatler_planla(scheduler: AsyncIOScheduler, app):
     """Her gün için rastgele sayıda ve rastgele saatte gönderim planlar,
     ve gece yarısı bir sonraki günün planını yeniden oluşturur."""
 
-    # Bugün için önceki planları temizle (job id'leri ile)
     for job in scheduler.get_jobs():
         if job.id.startswith("burc_gonderim_"):
             job.remove()
@@ -197,7 +196,7 @@ def gunluk_rastgele_saatler_planla(scheduler: AsyncIOScheduler, app):
     for i, (saat, dakika) in enumerate(sorted(secilen_saatler)):
         calisma_zamani = simdi.replace(hour=saat, minute=dakika, second=0, microsecond=0)
         if calisma_zamani < simdi:
-            continue  # geçmiş saatleri atla (bot gün ortasında başlatılmışsa)
+            continue
         scheduler.add_job(
             otomatik_paylas,
             "date",
@@ -208,7 +207,6 @@ def gunluk_rastgele_saatler_planla(scheduler: AsyncIOScheduler, app):
         )
         log.info(f"Planlandı: {calisma_zamani}")
 
-    # Bir sonraki günün planını gece yarısı yeniden oluştur
     yarin_gece_yarisi = (simdi + timedelta(days=1)).replace(
         hour=0, minute=1, second=0, microsecond=0
     )
@@ -248,4 +246,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
